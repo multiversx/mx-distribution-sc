@@ -113,7 +113,36 @@ pub trait EsdtDistribution {
             "Empty community rewards"
         );
         let biggest_unclaimable_reward_epoch = self.get_biggest_unclaimable_reward_epoch();
-        Ok(self.remove_reward_entries(biggest_unclaimable_reward_epoch))
+        Ok(self.remove_reward_entries_between_epochs(0, biggest_unclaimable_reward_epoch))
+    }
+
+    #[endpoint(undoLastCommunityReward)]
+    fn undo_last_community_reward(&self) -> SCResult<()> {
+        only_owner!(self, "Permission denied");
+        require!(
+            self.global_operation_ongoing().get(),
+            "Global Operation not ongoing"
+        );
+        require!(
+            !self.community_reward_list().is_empty(),
+            "Empty community rewards"
+        );
+        self.community_reward_list().pop_front();
+        Ok(())
+    }
+
+    #[endpoint(undoUserRewardsBetweenEpochs)]
+    fn undo_user_rewards_between_epochs(&self, lower: u64, higher: u64) -> SCResult<usize> {
+        only_owner!(self, "Permission denied");
+        require!(
+            self.global_operation_ongoing().get(),
+            "Global Operation not ongoing"
+        );
+        require!(
+            !self.community_reward_list().is_empty(),
+            "Empty community rewards"
+        );
+        Ok(self.remove_reward_entries_between_epochs(lower, higher))
     }
 
     #[view(calculateRewards)]
@@ -226,8 +255,8 @@ pub trait EsdtDistribution {
         result
     }
 
-    fn remove_reward_entries(&self, biggest_unclaimable_reward_epoch: u64) -> usize {
-        if biggest_unclaimable_reward_epoch == 0 {
+    fn remove_reward_entries_between_epochs(&self, lower: u64, higher: u64) -> usize {
+        if higher == 0 {
             return 0;
         }
 
@@ -239,7 +268,7 @@ pub trait EsdtDistribution {
             {
                 break;
             }
-            if user_reward_key.unlock_epoch <= biggest_unclaimable_reward_epoch {
+            if lower <= user_reward_key.unlock_epoch && user_reward_key.unlock_epoch <= higher {
                 to_remove_keys.push(user_reward_key);
             }
         }

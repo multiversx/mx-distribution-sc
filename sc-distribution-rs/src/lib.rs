@@ -63,21 +63,15 @@ pub trait EsdtDistribution {
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
         sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.require_community_reward_list_not_empty());
         require!(!user_rewards.is_empty(), "Empty rewards vec");
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards list"
-        );
         self.add_all_user_rewards_to_map(unlock_epoch, user_rewards)
     }
 
     #[endpoint(claimRewards)]
     fn claim_rewards(&self) -> SCResult<BigUint> {
         sc_try!(self.require_global_operation_not_ongoing());
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
+        sc_try!(self.require_community_reward_list_not_empty());
         let caller = self.get_caller();
         let cummulated_reward_amount = self.calculate_user_rewards(&caller, true);
         self.mint_and_send_rewards(&caller, &cummulated_reward_amount);
@@ -94,10 +88,7 @@ pub trait EsdtDistribution {
     fn undo_last_community_reward(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
         sc_try!(self.require_global_operation_ongoing());
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
+        sc_try!(self.require_community_reward_list_not_empty());
         self.community_reward_list().pop_front();
         Ok(())
     }
@@ -106,10 +97,7 @@ pub trait EsdtDistribution {
     fn undo_user_rewards_between_epochs(&self, lower: u64, higher: u64) -> SCResult<usize> {
         only_owner!(self, "Permission denied");
         sc_try!(self.require_global_operation_ongoing());
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
+        sc_try!(self.require_community_reward_list_not_empty());
         require!(lower <= higher, "Bad input values");
         Ok(self.remove_reward_entries_between_epochs(lower, higher))
     }
@@ -117,10 +105,7 @@ pub trait EsdtDistribution {
     #[view(calculateRewards)]
     fn calculate_rewards_view(&self, address: Address) -> SCResult<BigUint> {
         sc_try!(self.require_global_operation_not_ongoing());
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
+        sc_try!(self.require_community_reward_list_not_empty());
         Ok(self.calculate_user_rewards(&address, false))
     }
 
@@ -273,6 +258,14 @@ pub trait EsdtDistribution {
         require!(
             !self.global_operation_ongoing().get(),
             "Global Operation ongoing"
+        );
+        Ok(())
+    }
+
+    fn require_community_reward_list_not_empty(&self) -> SCResult<()> {
+        require!(
+            !self.community_reward_list().is_empty(),
+            "Empty community rewards list"
         );
         Ok(())
     }

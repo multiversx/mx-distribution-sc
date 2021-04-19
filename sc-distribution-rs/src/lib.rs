@@ -3,27 +3,11 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
+mod rewards;
+use rewards::*;
+
 const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
-
-#[derive(TopEncode, TopDecode, PartialEq, TypeAbi)]
-pub struct UserRewardKey {
-    pub user_address: Address,
-    pub unlock_epoch: u64,
-}
-
-#[derive(TopEncode, TopDecode, PartialEq, TypeAbi)]
-pub struct CommunityReward<BigUint: BigUintApi> {
-    pub total_amount: BigUint,
-    pub unlock_epoch: u64,
-    pub after_planning_amount: BigUint,
-}
-
-#[derive(TopEncode, TopDecode, PartialEq, TypeAbi)]
-pub struct UserReward<BigUint: BigUintApi> {
-    pub user_address: Address,
-    pub amount: BigUint,
-}
 
 #[elrond_wasm_derive::contract(EsdtDistributionImpl)]
 pub trait EsdtDistribution {
@@ -49,15 +33,20 @@ pub trait EsdtDistribution {
     #[endpoint(setCommunityReward)]
     fn set_community_reward(&self, total_amount: BigUint, unlock_epoch: u64) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        require!(
-            self.global_operation_ongoing().get(),
-            "Global Operation not ongoing"
-        );
+        sc_try!(self.require_global_operation_ongoing());
         require!(
             unlock_epoch >= self.get_block_epoch(),
             "Unlock epoch in the past"
         );
-        let reward = CommunityReward::<BigUint> {
+        require!(
+            self.community_reward_list()
+                .front()
+                .map(|community_reward| community_reward.unlock_epoch)
+                .unwrap_or_default()
+                < unlock_epoch,
+            "Community reward distribution should be added in chronological order"
+        );
+        let reward = CommunityReward {
             total_amount: total_amount.clone(),
             unlock_epoch,
             after_planning_amount: total_amount,
@@ -73,28 +62,16 @@ pub trait EsdtDistribution {
         #[var_args] user_rewards: VarArgs<MultiArg2<Address, BigUint>>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        require!(
-            self.global_operation_ongoing().get(),
-            "Global Operation not ongoing"
-        );
+        sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.require_community_reward_list_not_empty());
         require!(!user_rewards.is_empty(), "Empty rewards vec");
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards list"
-        );
         self.add_all_user_rewards_to_map(unlock_epoch, user_rewards)
     }
 
     #[endpoint(claimRewards)]
     fn claim_rewards(&self) -> SCResult<BigUint> {
-        require!(
-            !self.global_operation_ongoing().get(),
-            "Global Operation ongoing"
-        );
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
+        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.require_community_reward_list_not_empty());
         let caller = self.get_caller();
         let cummulated_reward_amount = self.calculate_user_rewards(&caller, true);
         self.mint_and_send_rewards(&caller, &cummulated_reward_amount);
@@ -103,30 +80,15 @@ pub trait EsdtDistribution {
 
     #[endpoint(clearUnclaimableRewards)]
     fn clear_unclaimable_rewards(&self) -> SCResult<usize> {
-        only_owner!(self, "Permission denied");
-        require!(
-            self.global_operation_ongoing().get(),
-            "Global Operation not ongoing"
-        );
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
         let biggest_unclaimable_reward_epoch = self.get_biggest_unclaimable_reward_epoch();
-        Ok(self.remove_reward_entries_between_epochs(0, biggest_unclaimable_reward_epoch))
+        self.undo_user_rewards_between_epochs(0, biggest_unclaimable_reward_epoch)
     }
 
     #[endpoint(undoLastCommunityReward)]
     fn undo_last_community_reward(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        require!(
-            self.global_operation_ongoing().get(),
-            "Global Operation not ongoing"
-        );
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
+        sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.require_community_reward_list_not_empty());
         self.community_reward_list().pop_front();
         Ok(())
     }
@@ -134,40 +96,31 @@ pub trait EsdtDistribution {
     #[endpoint(undoUserRewardsBetweenEpochs)]
     fn undo_user_rewards_between_epochs(&self, lower: u64, higher: u64) -> SCResult<usize> {
         only_owner!(self, "Permission denied");
-        require!(
-            self.global_operation_ongoing().get(),
-            "Global Operation not ongoing"
-        );
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
+        sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.require_community_reward_list_not_empty());
+        require!(lower <= higher, "Bad input values");
         Ok(self.remove_reward_entries_between_epochs(lower, higher))
     }
 
     #[view(calculateRewards)]
     fn calculate_rewards_view(&self, address: Address) -> SCResult<BigUint> {
-        require!(
-            !self.global_operation_ongoing().get(),
-            "Global Operation ongoing"
-        );
-        require!(
-            !self.community_reward_list().is_empty(),
-            "Empty community rewards"
-        );
+        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.require_community_reward_list_not_empty());
         Ok(self.calculate_user_rewards(&address, false))
     }
 
     #[view(getLastCommunityRewardAmountAndEpoch)]
     fn get_last_community_reward_amount_and_epoch(&self) -> MultiResult2<BigUint, u64> {
-        let mut amount = BigUint::zero();
-        let mut epoch = 0u64;
-        if !self.community_reward_list().is_empty() {
-            let last_community_reward = self.community_reward_list().front().unwrap();
-            amount = last_community_reward.total_amount;
-            epoch = last_community_reward.unlock_epoch;
-        }
-        (amount, epoch).into()
+        self.community_reward_list()
+            .front()
+            .map(|last_community_reward| {
+                (
+                    last_community_reward.total_amount,
+                    last_community_reward.unlock_epoch,
+                )
+            })
+            .unwrap_or((BigUint::zero(), 0u64))
+            .into()
     }
 
     fn add_all_user_rewards_to_map(
@@ -180,14 +133,14 @@ pub trait EsdtDistribution {
             unlock_epoch == last_community_reward.unlock_epoch,
             "Bad unlock epoch"
         );
-        for user_reward_multiarg in user_rewards.0 {
-            let user_reward = user_reward_multiarg.0;
+        for user_reward_multiarg in user_rewards.into_vec() {
+            let (user_address, reward_amount) = user_reward_multiarg.into_tuple();
             require!(
-                last_community_reward.after_planning_amount >= user_reward.1,
+                last_community_reward.after_planning_amount >= reward_amount,
                 "User rewards sums above community total rewards"
             );
-            last_community_reward.after_planning_amount -= user_reward.1.clone();
-            sc_try!(self.add_user_reward_entry(user_reward, unlock_epoch));
+            last_community_reward.after_planning_amount -= reward_amount.clone();
+            sc_try!(self.add_user_reward_entry(user_address, reward_amount, unlock_epoch));
         }
         self.community_reward_list().pop_front();
         self.community_reward_list()
@@ -197,11 +150,12 @@ pub trait EsdtDistribution {
 
     fn add_user_reward_entry(
         &self,
-        user_reward: (Address, BigUint),
+        user_address: Address,
+        reward_amount: BigUint,
         unlock_epoch: u64,
     ) -> SCResult<()> {
         let user_reward_key = UserRewardKey {
-            user_address: user_reward.0,
+            user_address,
             unlock_epoch,
         };
         require!(
@@ -209,7 +163,7 @@ pub trait EsdtDistribution {
             "Vector has duplicates"
         );
         self.user_reward_map()
-            .insert(user_reward_key, user_reward.1);
+            .insert(user_reward_key, reward_amount);
         Ok(())
     }
 
@@ -217,23 +171,18 @@ pub trait EsdtDistribution {
         let mut amount = BigUint::zero();
         let current_epoch = self.get_block_epoch();
 
-        for (list_index, community_reward) in self.community_reward_list().iter().enumerate() {
-            if list_index == MAX_CLAIMABLE_DISTRIBUTION_ROUNDS {
-                break;
-            }
-
-            let unlock_epoch = community_reward.unlock_epoch;
-            if unlock_epoch > current_epoch {
-                continue;
-            }
-
+        for community_reward in self
+            .community_reward_list()
+            .iter()
+            .take(MAX_CLAIMABLE_DISTRIBUTION_ROUNDS)
+            .filter(|x| x.unlock_epoch <= current_epoch)
+        {
             let user_reward_key = UserRewardKey {
                 user_address: address.clone(),
-                unlock_epoch,
+                unlock_epoch: community_reward.unlock_epoch,
             };
 
-            if self.user_reward_map().contains_key(&user_reward_key) {
-                let reward_amount = self.user_reward_map().get(&user_reward_key).unwrap();
+            if let Some(reward_amount) = self.user_reward_map().get(&user_reward_key) {
                 amount += reward_amount;
 
                 if delete_after_visit {
@@ -245,18 +194,19 @@ pub trait EsdtDistribution {
     }
 
     fn get_biggest_unclaimable_reward_epoch(&self) -> u64 {
-        let mut result = 0u64;
-        for (list_index, community_reward) in self.community_reward_list().iter().enumerate() {
-            if list_index == MAX_CLAIMABLE_DISTRIBUTION_ROUNDS {
-                result = community_reward.unlock_epoch;
-                break;
-            }
-        }
-        result
+        self.community_reward_list()
+            .iter()
+            .nth(MAX_CLAIMABLE_DISTRIBUTION_ROUNDS)
+            .map(|community_reward| community_reward.unlock_epoch)
+            .unwrap_or_default()
     }
 
     fn remove_reward_entries_between_epochs(&self, lower: u64, higher: u64) -> usize {
         if higher == 0 {
+            return 0;
+        }
+
+        if higher < lower {
             return 0;
         }
 
@@ -294,6 +244,30 @@ pub trait EsdtDistribution {
                 &[],
             );
         }
+    }
+
+    fn require_global_operation_ongoing(&self) -> SCResult<()> {
+        require!(
+            self.global_operation_ongoing().get(),
+            "Global Operation not ongoing"
+        );
+        Ok(())
+    }
+
+    fn require_global_operation_not_ongoing(&self) -> SCResult<()> {
+        require!(
+            !self.global_operation_ongoing().get(),
+            "Global Operation ongoing"
+        );
+        Ok(())
+    }
+
+    fn require_community_reward_list_not_empty(&self) -> SCResult<()> {
+        require!(
+            !self.community_reward_list().is_empty(),
+            "Empty community rewards list"
+        );
+        Ok(())
     }
 
     #[storage_mapper("global_operation_ongoing")]

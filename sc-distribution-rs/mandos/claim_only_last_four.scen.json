@@ -3,7 +3,7 @@
     "steps": [
         {
             "step": "externalSteps",
-            "path": "set_user_rewards.scen.json"
+            "path": "set_user_distribution.scen.json"
         },
         {
             "step": "scCall",
@@ -32,7 +32,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setCommunityReward",
+                "function": "setCommunityDistribution",
                 "arguments": [
                     "100,000",
                     "50"
@@ -55,7 +55,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setPerUserRewards",
+                "function": "setPerUserDistributedAssets",
                 "arguments": [
                     "50",
                     "address:user1",
@@ -111,7 +111,7 @@
                 "from": "address:user4",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "claimRewards",
+                "function": "claimAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"

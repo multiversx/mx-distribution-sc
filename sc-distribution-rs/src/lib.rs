@@ -33,6 +33,7 @@ pub trait EsdtDistribution {
     #[endpoint(setCommunityDistribution)]
     fn set_community_distrib(&self, total_amount: BigUint, spread_epoch: u64) -> SCResult<()> {
         only_owner!(self, "Permission denied");
+        sc_try!(self.require_global_operation_ongoing());
         require!(
             spread_epoch >= self.get_block_epoch(),
             "Spread epoch in the past"
@@ -72,9 +73,9 @@ pub trait EsdtDistribution {
         sc_try!(self.require_global_operation_not_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         let caller = self.get_caller();
-        let cummulated_asset_amount = self.calculate_user_assets(&caller, true);
-        self.mint_and_send_assets(&caller, &cummulated_asset_amount);
-        Ok(cummulated_asset_amount)
+        let cummulated_reward_amount = self.calculate_user_assets(&caller, true);
+        self.mint_and_send_assets(&caller, &cummulated_reward_amount);
+        Ok(cummulated_reward_amount)
     }
 
     #[endpoint(clearUnclaimableAssets)]
@@ -202,6 +203,10 @@ pub trait EsdtDistribution {
 
     fn remove_asset_entries_between_epochs(&self, lower: u64, higher: u64) -> usize {
         if higher == 0 {
+            return 0;
+        }
+
+        if higher < lower {
             return 0;
         }
 

@@ -171,15 +171,17 @@ pub trait LockedAssetModule {
     ) -> Vec<UnlockMilestone> {
         let mut new_unlock_milestones = Vec::<UnlockMilestone>::new();
         let unlock_precent = self.get_unlock_precent(current_epoch, old_unlock_milestones);
-        let unlock_precent_remaining = 100 - unlock_precent;
+        let unlock_precent_remaining = 100u64 - (unlock_precent as u64);
         if unlock_precent_remaining == 0 {
             return new_unlock_milestones;
         }
-        for old_milestone in old_unlock_milestones {
-            if old_milestone.unlock_epoch > current_epoch {
+        for old_milestone in old_unlock_milestones.iter() {
+            if old_milestone.unlock_epoch >= current_epoch {
+                let new_unlock_precent: u64 =
+                    (old_milestone.unlock_precent as u64) * 100u64 / unlock_precent_remaining;
                 new_unlock_milestones.push(UnlockMilestone {
                     unlock_epoch: old_milestone.unlock_epoch,
-                    unlock_precent: old_milestone.unlock_precent * 100 / unlock_precent_remaining,
+                    unlock_precent: new_unlock_precent as u8,
                 });
             }
         }
@@ -187,9 +189,7 @@ pub trait LockedAssetModule {
         for new_milestone in new_unlock_milestones.iter() {
             sum_of_new_precents += new_milestone.unlock_precent;
         }
-        let mut milestone = new_unlock_milestones.pop().unwrap();
-        milestone.unlock_precent = milestone.unlock_precent + 100 - sum_of_new_precents;
-        new_unlock_milestones.push(milestone);
+        new_unlock_milestones[0].unlock_precent += 100 - sum_of_new_precents;
         new_unlock_milestones
     }
 

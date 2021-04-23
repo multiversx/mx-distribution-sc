@@ -3,17 +3,30 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-mod assets;
-use assets::*;
+mod distrib_common;
+use distrib_common::*;
+
+mod asset;
+use asset::*;
+
+mod locked_asset;
+use locked_asset::*;
 
 const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
 
 #[elrond_wasm_derive::contract(EsdtDistributionImpl)]
 pub trait EsdtDistribution {
+    #[module(AssetModuleImpl)]
+    fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
+
+    #[module(LockedAssetModuleImpl)]
+    fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
+
     #[init]
-    fn init(&self, distributed_token_id: TokenIdentifier) {
-        self.distributed_token_id().set(&distributed_token_id);
+    fn init(&self, asset_token_id: TokenIdentifier, locked_token_id: TokenIdentifier) {
+        self.asset().token_id().set(&asset_token_id);
+        self.locked_asset().token_id().set(&locked_token_id);
     }
 
     #[endpoint(startGlobalOperation)]
@@ -40,7 +53,7 @@ pub trait EsdtDistribution {
         only_owner!(self, "Permission denied");
         sc_try!(self.require_global_operation_ongoing());
         require!(
-            spread_epoch >= self.get_block_epoch(),
+            spread_epoch >= self.blockchain().get_block_epoch(),
             "Spread epoch in the past"
         );
         require!(
@@ -101,10 +114,10 @@ pub trait EsdtDistribution {
     fn claim_assets(&self) -> SCResult<BigUint> {
         sc_try!(self.require_global_operation_not_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
-        let caller = self.get_caller();
+        let caller = self.blockchain().get_caller();
         let (assets_amounts, _) = self.calculate_user_assets(&caller, false, true);
         let cummulated_amount = self.sum_of(&assets_amounts);
-        self.mint_and_send_assets(&caller, &cummulated_amount);
+        self.asset().mint_and_send(&caller, &cummulated_amount);
         Ok(cummulated_amount)
     }
 
@@ -112,9 +125,14 @@ pub trait EsdtDistribution {
     fn claim_locked_assets(&self) -> SCResult<BigUint> {
         sc_try!(self.require_global_operation_not_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
-        let caller = self.get_caller();
-        let (assets_amounts, _unlock_milestones_vec) = self.calculate_user_assets(&caller, true, true);
-        //self.mint_and_send_assets(&caller, &assets_amounts, &unlock_milestones_vec);
+        let caller = self.blockchain().get_caller();
+        let (assets_amounts, unlock_milestones_vec) =
+            self.calculate_user_assets(&caller, true, true);
+        sc_try!(self.locked_asset().create_and_send_multiple(
+            &caller,
+            &assets_amounts,
+            &unlock_milestones_vec
+        ));
         let cummulated_amount = self.sum_of(&assets_amounts);
         Ok(cummulated_amount)
     }
@@ -188,12 +206,16 @@ pub trait EsdtDistribution {
         &self,
         unlock_milestones: &VarArgs<UnlockMilestone>,
     ) -> SCResult<()> {
-        let mut precents_sum: u64 = 0;
+        let mut precents_sum: u8 = 0;
         let mut last_milestone_unlock_epoch: u64 = 0;
         for milestone in unlock_milestones.0.clone() {
             require!(
                 milestone.unlock_epoch > last_milestone_unlock_epoch,
                 "Unlock epochs not in order"
+            );
+            require!(
+                milestone.unlock_precent <= 100,
+                "Unlock precent more than 100"
             );
             last_milestone_unlock_epoch = milestone.unlock_epoch;
             precents_sum += milestone.unlock_precent;
@@ -259,11 +281,11 @@ pub trait EsdtDistribution {
         &self,
         address: &Address,
         locked_asset: bool,
-        delete_after_visit: bool
+        delete_after_visit: bool,
     ) -> (Vec<BigUint>, Vec<Vec<UnlockMilestone>>) {
-        let current_epoch = self.get_block_epoch();
+        let current_epoch = self.blockchain().get_block_epoch();
         let mut amounts = Vec::<BigUint>::new();
-        let mut milestones = Vec::<Vec::<UnlockMilestone>>::new();
+        let mut milestones = Vec::<Vec<UnlockMilestone>>::new();
 
         for community_distrib in self
             .community_distribution_list()
@@ -307,10 +329,10 @@ pub trait EsdtDistribution {
         }
 
         let mut to_remove_keys = Vec::new();
-        let search_gas_limit = self.get_gas_left() / 2;
+        let search_gas_limit = self.blockchain().get_gas_left() / 2;
         for (user_asset_index, user_asset_key) in self.user_asset_map().keys().enumerate() {
             if (user_asset_index + 1) % GAS_CHECK_FREQUENCY == 0
-                && self.get_gas_left() < search_gas_limit
+                && self.blockchain().get_gas_left() < search_gas_limit
             {
                 break;
             }
@@ -323,23 +345,6 @@ pub trait EsdtDistribution {
             self.user_asset_map().remove(&key);
         }
         to_remove_keys.len()
-    }
-
-    fn mint_and_send_assets(&self, address: &Address, asset_amount: &BigUint) {
-        if asset_amount > &0 {
-            let asset_token_id = self.distributed_token_id().get();
-            self.send().esdt_local_mint(
-                self.get_gas_left(),
-                asset_token_id.as_esdt_identifier(),
-                &asset_amount,
-            );
-            self.send().direct_esdt_via_transf_exec(
-                address,
-                asset_token_id.as_esdt_identifier(),
-                &asset_amount,
-                &[],
-            );
-        }
     }
 
     fn require_global_operation_ongoing(&self) -> SCResult<()> {
@@ -366,8 +371,8 @@ pub trait EsdtDistribution {
         Ok(())
     }
 
-    fn sum_of(&self, vect: &Vec<BigUint>) -> BigUint {
-        let mut sum =  BigUint::zero();
+    fn sum_of(&self, vect: &[BigUint]) -> BigUint {
+        let mut sum = BigUint::zero();
         for item in vect.iter() {
             sum += item;
         }
@@ -382,10 +387,6 @@ pub trait EsdtDistribution {
         &self,
     ) -> LinkedListMapper<Self::Storage, CommunityDistribution<BigUint>>;
 
-    #[storage_mapper("user_asset")]
+    #[storage_mapper("user_asset_map")]
     fn user_asset_map(&self) -> MapMapper<Self::Storage, UserAssetKey, BigUint>;
-
-    #[view(getDistributedTokenId)]
-    #[storage_mapper("distributed_token_id")]
-    fn distributed_token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 }

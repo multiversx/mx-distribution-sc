@@ -11,7 +11,7 @@ pub struct UserAssetKey {
 #[derive(TopEncode, TopDecode, PartialEq, TypeAbi, NestedEncode, NestedDecode, Clone, Copy)]
 pub struct UnlockMilestone {
     pub unlock_epoch: u64,
-    pub unlock_precent: u64,
+    pub unlock_precent: u8,
 }
 
 #[derive(TopEncode, TopDecode, PartialEq, TypeAbi)]

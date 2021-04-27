@@ -5,16 +5,20 @@ type Nonce = u64;
 type Epoch = u64;
 pub use crate::asset::*;
 pub use crate::distrib_common::*;
+pub use crate::global_op::*;
 
 #[derive(TopEncode, TopDecode, TypeAbi)]
 pub struct LockedTokenAttributes {
-    unlock_milestones: Vec<UnlockMilestone>,
+    pub unlock_milestones: Vec<UnlockMilestone>,
 }
 
 #[elrond_wasm_derive::module(LockedAssetModuleImpl)]
 pub trait LockedAssetModule {
     #[module(AssetModuleImpl)]
     fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
+
+    #[module(GlobalOperationModuleImpl)]
+    fn global_operation(&self) -> GlobalOperationModuleImpl<T, BigInt, BigUint>;
 
     fn create_and_send_multiple(
         &self,
@@ -38,7 +42,7 @@ pub trait LockedAssetModule {
     ) {
         if amount > &0 {
             self.create_tokens(&token_id, &amount, unlock_milestones);
-            let current_nonce = self.current_nonce();
+            let current_nonce = self.token_nonce().get();
             self.send_tokens(&token_id, current_nonce, &amount, &caller);
         }
     }
@@ -62,6 +66,8 @@ pub trait LockedAssetModule {
             &attributes,
             &[BoxedBytes::empty()],
         );
+
+        self.increase_nonce();
     }
 
     fn burn_tokens(&self, token: &TokenIdentifier, nonce: Nonce, amount: &BigUint) {
@@ -112,6 +118,10 @@ pub trait LockedAssetModule {
     #[payable("*")]
     #[endpoint(unlockAssets)]
     fn unlock_assets(&self) -> SCResult<()> {
+        require!(
+            !self.global_operation().is_ongoing().get(),
+            "Global operation is ongoing"
+        );
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
         require!(token_id == self.token_id().get(), "Bad payment token");
@@ -193,7 +203,7 @@ pub trait LockedAssetModule {
         new_unlock_milestones
     }
 
-    fn current_nonce(&self) -> Nonce {
+    fn increase_nonce(&self) -> Nonce {
         let new_nonce = self.token_nonce().get() + 1;
         self.token_nonce().set(&new_nonce);
         new_nonce

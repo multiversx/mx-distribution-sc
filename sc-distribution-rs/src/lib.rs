@@ -3,14 +3,13 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-mod distrib_common;
-use distrib_common::*;
+mod proxy_pair;
+use proxy_pair::*;
 
 mod asset;
-use asset::*;
-
+mod distrib_common;
+mod global_op;
 mod locked_asset;
-use locked_asset::*;
 
 const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
@@ -23,23 +22,35 @@ pub trait EsdtDistribution {
     #[module(LockedAssetModuleImpl)]
     fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
 
+    #[module(GlobalOperationModuleImpl)]
+    fn global_operation(&self) -> GlobalOperationModuleImpl<T, BigInt, BigUint>;
+
+    #[module(ProxyPairModuleImpl)]
+    fn proxy_pair(&self) -> ProxyPairModuleImpl<T, BigInt, BigUint>;
+
     #[init]
-    fn init(&self, asset_token_id: TokenIdentifier, locked_token_id: TokenIdentifier) {
+    fn init(
+        &self,
+        asset_token_id: TokenIdentifier,
+        locked_token_id: TokenIdentifier,
+        wrapped_lp_token_id: TokenIdentifier,
+    ) {
         self.asset().token_id().set(&asset_token_id);
         self.locked_asset().token_id().set(&locked_token_id);
+        self.proxy_pair().token_id().set(&wrapped_lp_token_id);
     }
 
     #[endpoint(startGlobalOperation)]
     fn start_planning(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        self.global_operation_ongoing().set(&true);
+        self.global_operation().start();
         Ok(())
     }
 
     #[endpoint(endGlobalOperation)]
     fn end_planning(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        self.global_operation_ongoing().set(&false);
+        self.global_operation().stop();
         Ok(())
     }
 
@@ -349,7 +360,7 @@ pub trait EsdtDistribution {
 
     fn require_global_operation_ongoing(&self) -> SCResult<()> {
         require!(
-            self.global_operation_ongoing().get(),
+            self.global_operation().is_ongoing().get(),
             "Global Operation not ongoing"
         );
         Ok(())
@@ -357,7 +368,7 @@ pub trait EsdtDistribution {
 
     fn require_global_operation_not_ongoing(&self) -> SCResult<()> {
         require!(
-            !self.global_operation_ongoing().get(),
+            !self.global_operation().is_ongoing().get(),
             "Global Operation ongoing"
         );
         Ok(())
@@ -378,9 +389,6 @@ pub trait EsdtDistribution {
         }
         sum
     }
-
-    #[storage_mapper("global_operation_ongoing")]
-    fn global_operation_ongoing(&self) -> SingleValueMapper<Self::Storage, bool>;
 
     #[storage_mapper("community_distribution_list")]
     fn community_distribution_list(

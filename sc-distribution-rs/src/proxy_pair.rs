@@ -12,8 +12,12 @@ use core::cmp::min;
 
 const ADD_LIQUIDITY_GAS_LIMIT: u64 = 30000000;
 const ACCEPT_ESDT_PAYMENT_GAS_LIMIT: u64 = 25000000;
+const ASK_FOR_LP_TOKEN_ID_GAS_LIMIT: u64 = 25000000;
+const ASK_FOR_TOKENS_GAS_LIMIT: u64 = 25000000;
+const REMOVE_LIQUIDITY_GAS_LIMIT: u64 = 40000000;
 
 const ACCEPT_ESDT_PAYMENT_FUNC_NAME: &[u8] = b"acceptEsdtPayment";
+const REMOVE_LIQUIDITY_FUNC_NAME: &[u8] = b"removeLiquidity";
 
 type AddLiquidityResultType<BigUint> =
     MultiResult3<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
@@ -40,6 +44,11 @@ pub trait PairContract {
         second_token_amount_desired: BigUint,
         second_token_amount_min: BigUint,
     ) -> ContractCall<BigUint, AddLiquidityResultType<BigUint>>;
+    fn getLpTokenIdentifier(&self) -> ContractCall<BigUint, TokenIdentifier>;
+    fn getTokensForGivenPosition(
+        &self,
+        amount: BigUint,
+    ) -> ContractCall<BigUint, MultiResult2<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>>;
 }
 
 #[elrond_wasm_derive::module(ProxyPairModuleImpl)]
@@ -222,6 +231,161 @@ pub trait ProxyPairModule {
         );
 
         Ok(())
+    }
+
+    #[payable("*")]
+    #[endpoint(removeLiquidityProxy)]
+    fn remove_liquidity_proxy(
+        &self,
+        pair_address: Address,
+        first_token_amount_min: BigUint,
+        second_token_amount_min: BigUint,
+    ) -> SCResult<()> {
+        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.require_is_intermediated_pair(&pair_address));
+
+        let token_nonce = self.call_value().esdt_token_nonce();
+        require!(token_nonce != 0, "Can only be called with an SFT");
+        let (amount, token_id) = self.call_value().payment_token_pair();
+        require!(amount != 0, "Paymend amount cannot be zero");
+
+        let wrapped_lp_token_id = self.token_id().get();
+        require!(token_id == wrapped_lp_token_id, "Wrong input token");
+
+        let caller = self.blockchain().get_caller();
+        let lp_token_id = self.ask_for_lp_token_id(&pair_address);
+        let attributes = sc_try!(self.get_attributes(&token_id, token_nonce));
+        require!(lp_token_id == attributes.lp_token_id, "Bad input address");
+
+        let locked_asset_token_id = self.locked_asset().token_id().get();
+        let asset_token_id = self.asset().token_id().get();
+        let tokens_for_position = self.ask_for_tokens_for_position(&pair_address, &amount);
+        sc_try!(self.actual_remove_liquidity(
+            &pair_address,
+            &lp_token_id,
+            &amount,
+            &first_token_amount_min,
+            &second_token_amount_min,
+        ));
+
+        let fungible_token_id: TokenIdentifier;
+        let fungible_token_amount: BigUint;
+        let assets_received: BigUint;
+        let locked_assets_invested = attributes.locked_assets_invested;
+        if tokens_for_position.0.token_id == asset_token_id {
+            assets_received = tokens_for_position.0.amount;
+            fungible_token_id = tokens_for_position.1.token_id;
+            fungible_token_amount = tokens_for_position.1.amount;
+        } else if tokens_for_position.1.token_id == asset_token_id {
+            assets_received = tokens_for_position.1.amount;
+            fungible_token_id = tokens_for_position.0.token_id;
+            fungible_token_amount = tokens_for_position.0.amount;
+        } else {
+            return sc_error!("Bad tokens received from pair SC");
+        }
+
+        //Send back the tokens removed from pair sc.
+        self.direct_transfer_fungible(&caller, &fungible_token_id, &fungible_token_amount);
+        let locked_assets_to_send =
+            core::cmp::min(assets_received.clone(), locked_assets_invested.clone());
+        self.locked_asset().create_and_send(
+            &caller,
+            &locked_asset_token_id,
+            &locked_assets_to_send,
+            &attributes.locked_assets_unlock_milestones,
+        );
+
+        if assets_received > locked_assets_invested {
+            let difference = assets_received - locked_assets_invested.clone();
+            self.direct_transfer_fungible(&caller, &asset_token_id, &difference);
+            self.asset().burn(&asset_token_id, &locked_assets_invested);
+        } else {
+            self.asset().burn(&asset_token_id, &assets_received);
+        }
+
+        self.burn_tokens(
+            &wrapped_lp_token_id,
+            token_nonce,
+            &amount,
+        );
+        Ok(())
+    }
+
+    fn burn_tokens(&self, token: &TokenIdentifier, nonce: Nonce, amount: &BigUint) {
+        self.send().esdt_nft_burn(
+            self.blockchain().get_gas_left(),
+            token.as_esdt_identifier(),
+            nonce,
+            amount,
+        );
+    }
+
+    fn actual_remove_liquidity(
+        &self,
+        pair_address: &Address,
+        lp_token_id: &TokenIdentifier,
+        liquidity: &BigUint,
+        first_token_amount_min: &BigUint,
+        second_token_amount_min: &BigUint,
+    ) -> SCResult<()> {
+        let mut arg_buffer = ArgBuffer::new();
+        arg_buffer.push_argument_bytes(&first_token_amount_min.to_bytes_be());
+        arg_buffer.push_argument_bytes(&second_token_amount_min.to_bytes_be());
+        let result = self.send().direct_esdt_execute(
+            pair_address,
+            lp_token_id.as_esdt_identifier(),
+            liquidity,
+            min(self.blockchain().get_gas_left(), REMOVE_LIQUIDITY_GAS_LIMIT),
+            REMOVE_LIQUIDITY_FUNC_NAME,
+            &arg_buffer,
+        );
+
+        match result {
+            Result::Ok(()) => Ok(()),
+            Result::Err(_) => sc_error!("Failed to transfer to pair"),
+        }
+    }
+
+    fn ask_for_lp_token_id(&self, pair_address: &Address) -> TokenIdentifier {
+        let gas_limit = core::cmp::min(
+            self.blockchain().get_gas_left(),
+            ASK_FOR_LP_TOKEN_ID_GAS_LIMIT,
+        );
+        contract_call!(self, pair_address.clone(), PairContractProxy)
+            .getLpTokenIdentifier()
+            .execute_on_dest_context(gas_limit, self.send())
+    }
+
+    fn ask_for_tokens_for_position(
+        &self,
+        pair_address: &Address,
+        liquidity: &BigUint,
+    ) -> (TokenAmountPair<BigUint>, TokenAmountPair<BigUint>) {
+        let gas_limit = core::cmp::min(self.blockchain().get_gas_left(), ASK_FOR_TOKENS_GAS_LIMIT);
+        let result = contract_call!(self, pair_address.clone(), PairContractProxy)
+            .getTokensForGivenPosition(liquidity.clone())
+            .execute_on_dest_context(gas_limit, self.send());
+        result.0
+    }
+
+    fn get_attributes(
+        &self,
+        token_id: &TokenIdentifier,
+        token_nonce: Nonce,
+    ) -> SCResult<WrappedLpTokenAttributes<BigUint>> {
+        let token_info = self.blockchain().get_esdt_token_data(
+            &self.blockchain().get_sc_address(),
+            token_id.as_esdt_identifier(),
+            token_nonce,
+        );
+
+        let attributes = token_info.decode_attributes::<WrappedLpTokenAttributes<BigUint>>();
+        match attributes {
+            Result::Ok(decoded_obj) => Ok(decoded_obj),
+            Result::Err(_) => {
+                return sc_error!("Decoding error");
+            }
+        }
     }
 
     fn create_and_send_wrapped_lp_token(

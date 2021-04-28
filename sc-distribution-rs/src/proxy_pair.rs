@@ -9,8 +9,8 @@ pub use crate::global_op::*;
 pub use crate::locked_asset::*;
 use core::cmp::min;
 
-const ADD_LIQUIDITY_GAS_LIMIT: u64 = 25000000;
-const ACCEPT_ESDT_PAYMENT_GAS_LIMIT: u64 = 15000000;
+const ADD_LIQUIDITY_GAS_LIMIT: u64 = 100000000;
+const ACCEPT_ESDT_PAYMENT_GAS_LIMIT: u64 = 25000000;
 const RECLAIM_TEMPORARY_FUNDS_GAS_LIMIT: u64 = 25000000;
 
 const ACCEPT_ESDT_PAYMENT_FUNC_NAME: &[u8] = b"acceptEsdtPayment";
@@ -41,6 +41,11 @@ pub trait PairContract {
         second_token_amount_desired: BigUint,
         second_token_amount_min: BigUint,
     ) -> ContractCall<BigUint, AddLiquidityResultType<BigUint>>;
+    fn removeLiquidity(
+        &self,
+        first_token_amount_min: BigUint,
+        second_token_amount_min: BigUint,
+    ) -> ContractCall<BigUint, RemoveLiquidityResultType<BigUint>>;
 }
 
 #[elrond_wasm_derive::module(ProxyPairModuleImpl)]
@@ -105,8 +110,8 @@ pub trait ProxyPairModule {
         &self,
         pair_address: Address,
         first_token_amount: BigUint,
-        first_token_amount_min: BigUint,
         second_token_amount: BigUint,
+        first_token_amount_min: BigUint,
         second_token_amount_min: BigUint,
     ) -> SCResult<()> {
         sc_try!(self.require_global_operation_not_ongoing());
@@ -137,8 +142,8 @@ pub trait ProxyPairModule {
         let result = contract_call!(self, pair_address, PairContractProxy)
             .addLiquidity(
                 first_token_amount,
-                first_token_amount_min,
                 second_token_amount,
+                first_token_amount_min,
                 second_token_amount_min,
             )
             .execute_on_dest_context(gas_limit, self.send());
@@ -218,6 +223,13 @@ pub trait ProxyPairModule {
             locked_tokens_consumed,
             unlock_milestones,
         );
+        let nonce = self.token_nonce().get();
+        self.send_wrapped_lp_token(
+            &wrapped_lp_token_id,
+            nonce,
+            lp_token_amount,
+            caller,
+        );
     }
 
     fn send_wrapped_lp_token(
@@ -231,7 +243,7 @@ pub trait ProxyPairModule {
             caller,
             wrapped_lp_token_id.as_esdt_identifier(),
             wrapped_lp_token_nonce,
-            &lp_token_amount,
+            &amount,
             &[],
         );
     }
@@ -260,6 +272,8 @@ pub trait ProxyPairModule {
             &attributes,
             &[BoxedBytes::empty()],
         );
+
+        self.increase_nonce();
     }
 
     fn send_temporary_funds_back(
@@ -398,7 +412,7 @@ pub trait ProxyPairModule {
 
     fn require_global_operation_not_ongoing(&self) -> SCResult<()> {
         require!(
-            self.global_operation().is_ongoing().get(),
+            !self.global_operation().is_ongoing().get(),
             "Global operation ongoing"
         );
         Ok(())
@@ -426,7 +440,7 @@ pub trait ProxyPairModule {
     fn intermediated_pairs(&self) -> SetMapper<Self::Storage, Address>;
 
     #[view(getWrappedLpTokenId)]
-    #[storage_mapper("wrapped_tp_token_id")]
+    #[storage_mapper("wrapped_lp_token_id")]
     fn token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 
     #[storage_mapper("wrapped_tp_token_nonce")]

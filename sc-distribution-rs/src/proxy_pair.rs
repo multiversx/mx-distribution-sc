@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 #![allow(clippy::too_many_arguments)]
+#![allow(clippy::clippy::comparison_chain)]
 
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
@@ -33,7 +34,7 @@ pub struct WrappedLpTokenAttributes<BigUint: BigUintApi> {
     lp_token_id: TokenIdentifier,
     lp_token_total_amount: BigUint,
     locked_assets_invested: BigUint,
-    locked_assets_unlock_milestones: Vec<UnlockMilestone>,
+    locked_assets_nonce: Nonce,
 }
 
 #[elrond_wasm_derive::callable(PairContractProxy)]
@@ -166,22 +167,15 @@ pub trait ProxyPairModule {
         let second_token_used = result_tuple.2;
 
         //Recalculate temporary funds and burn unused
-        let locked_asset_attr: LockedTokenAttributes;
+        let locked_asset_token_nonce: Nonce;
         let consumed_locked_tokens: BigUint;
         let asset_token_id = self.asset().token_id().get();
         if first_token_used.token_id == asset_token_id {
             consumed_locked_tokens = first_token_used.amount;
             let unused_minted_assets = first_token_amount - consumed_locked_tokens.clone();
-            locked_asset_attr = sc_try!(self
-                .locked_asset()
-                .get_attributes(&first_token_id, first_token_nonce));
-
             self.asset().burn(&asset_token_id, &unused_minted_assets);
-            self.locked_asset().burn_tokens(
-                &first_token_id,
-                first_token_nonce,
-                &consumed_locked_tokens,
-            );
+            locked_asset_token_nonce = first_token_nonce;
+
             self.decrease_temporary_funds_amount(
                 &caller,
                 &first_token_id,
@@ -197,16 +191,9 @@ pub trait ProxyPairModule {
         } else if second_token_used.token_id == asset_token_id {
             consumed_locked_tokens = second_token_used.amount;
             let unused_minted_assets = second_token_amount - consumed_locked_tokens.clone();
-            locked_asset_attr = sc_try!(self
-                .locked_asset()
-                .get_attributes(&second_token_id, second_token_nonce));
-
             self.asset().burn(&asset_token_id, &unused_minted_assets);
-            self.locked_asset().burn_tokens(
-                &second_token_id,
-                second_token_nonce,
-                &consumed_locked_tokens,
-            );
+            locked_asset_token_nonce = second_token_nonce;
+
             self.decrease_temporary_funds_amount(
                 &caller,
                 &first_token_used.token_id,
@@ -227,7 +214,7 @@ pub trait ProxyPairModule {
             &lp_received.token_id,
             &lp_received.amount,
             &consumed_locked_tokens,
-            &locked_asset_attr.unlock_milestones,
+            locked_asset_token_nonce,
             &caller,
         );
 
@@ -274,7 +261,10 @@ pub trait ProxyPairModule {
         let assets_received: BigUint;
         let locked_assets_invested =
             amount.clone() * attributes.locked_assets_invested / attributes.lp_token_total_amount;
-        require!(locked_assets_invested > 0, "Not enough wrapped lp token provided");
+        require!(
+            locked_assets_invested > 0,
+            "Not enough wrapped lp token provided"
+        );
         if tokens_for_position.0.token_id == asset_token_id {
             assets_received = tokens_for_position.0.amount;
             fungible_token_id = tokens_for_position.1.token_id;
@@ -291,26 +281,31 @@ pub trait ProxyPairModule {
         self.direct_transfer_fungible(&caller, &fungible_token_id, &fungible_token_amount);
         let locked_assets_to_send =
             core::cmp::min(assets_received.clone(), locked_assets_invested.clone());
-        self.locked_asset().create_and_send(
-            &caller,
+        self.locked_asset().send_tokens(
             &locked_asset_token_id,
+            attributes.locked_assets_nonce,
             &locked_assets_to_send,
-            &attributes.locked_assets_unlock_milestones,
+            &caller,
         );
 
+        //Do cleanup
         if assets_received > locked_assets_invested {
             let difference = assets_received - locked_assets_invested.clone();
             self.direct_transfer_fungible(&caller, &asset_token_id, &difference);
             self.asset().burn(&asset_token_id, &locked_assets_invested);
+        } else if assets_received < locked_assets_invested {
+            let difference = locked_assets_invested - assets_received.clone();
+            self.locked_asset().burn_tokens(
+                &locked_asset_token_id,
+                attributes.locked_assets_nonce,
+                &difference,
+            );
+            self.asset().burn(&asset_token_id, &assets_received);
         } else {
             self.asset().burn(&asset_token_id, &assets_received);
         }
 
-        self.burn_tokens(
-            &wrapped_lp_token_id,
-            token_nonce,
-            &amount,
-        );
+        self.burn_tokens(&wrapped_lp_token_id, token_nonce, &amount);
         Ok(())
     }
 
@@ -396,7 +391,7 @@ pub trait ProxyPairModule {
         lp_token_id: &TokenIdentifier,
         lp_token_amount: &BigUint,
         locked_tokens_consumed: &BigUint,
-        unlock_milestones: &[UnlockMilestone],
+        locked_tokens_nonce: Nonce,
         caller: &Address,
     ) {
         let wrapped_lp_token_id = self.token_id().get();
@@ -405,7 +400,7 @@ pub trait ProxyPairModule {
             lp_token_id,
             lp_token_amount,
             locked_tokens_consumed,
-            unlock_milestones,
+            locked_tokens_nonce,
         );
         let nonce = self.token_nonce().get();
         self.send_wrapped_lp_token(&wrapped_lp_token_id, nonce, lp_token_amount, caller);
@@ -433,13 +428,13 @@ pub trait ProxyPairModule {
         lp_token_id: &TokenIdentifier,
         lp_token_amount: &BigUint,
         locked_tokens_consumed: &BigUint,
-        unlock_milestones: &[UnlockMilestone],
+        locked_tokens_nonce: Nonce,
     ) {
         let attributes = WrappedLpTokenAttributes::<BigUint> {
             lp_token_id: lp_token_id.clone(),
             lp_token_total_amount: lp_token_amount.clone(),
             locked_assets_invested: locked_tokens_consumed.clone(),
-            locked_assets_unlock_milestones: unlock_milestones.to_vec(),
+            locked_assets_nonce: locked_tokens_nonce,
         };
 
         self.send()

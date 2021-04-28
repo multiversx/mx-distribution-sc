@@ -165,6 +165,11 @@ pub trait ProxyPairModule {
         let lp_received = result_tuple.0;
         let first_token_used = result_tuple.1;
         let second_token_used = result_tuple.2;
+        require!(
+            first_token_used.token_id == first_token_id ||
+            second_token_used.token_id == second_token_id,
+            "Bad token order"
+        );
 
         //Recalculate temporary funds and burn unused
         let locked_asset_token_nonce: Nonce;

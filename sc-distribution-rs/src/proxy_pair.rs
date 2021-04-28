@@ -31,6 +31,7 @@ pub struct TokenAmountPair<BigUint: BigUintApi> {
 #[derive(TopEncode, TopDecode, TypeAbi)]
 pub struct WrappedLpTokenAttributes<BigUint: BigUintApi> {
     lp_token_id: TokenIdentifier,
+    lp_token_total_amount: BigUint,
     locked_assets_invested: BigUint,
     locked_assets_unlock_milestones: Vec<UnlockMilestone>,
 }
@@ -271,7 +272,9 @@ pub trait ProxyPairModule {
         let fungible_token_id: TokenIdentifier;
         let fungible_token_amount: BigUint;
         let assets_received: BigUint;
-        let locked_assets_invested = attributes.locked_assets_invested;
+        let locked_assets_invested =
+            amount.clone() * attributes.locked_assets_invested / attributes.lp_token_total_amount;
+        require!(locked_assets_invested > 0, "Not enough wrapped lp token provided");
         if tokens_for_position.0.token_id == asset_token_id {
             assets_received = tokens_for_position.0.amount;
             fungible_token_id = tokens_for_position.1.token_id;
@@ -434,6 +437,7 @@ pub trait ProxyPairModule {
     ) {
         let attributes = WrappedLpTokenAttributes::<BigUint> {
             lp_token_id: lp_token_id.clone(),
+            lp_token_total_amount: lp_token_amount.clone(),
             locked_assets_invested: locked_tokens_consumed.clone(),
             locked_assets_unlock_milestones: unlock_milestones.to_vec(),
         };

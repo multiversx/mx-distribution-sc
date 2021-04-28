@@ -163,7 +163,7 @@ pub trait DexRewardsLock {
         let epochs_waited = current_epoch - deposit_epoch;
 
         let deposit_amount = self.mex_deposit(nft_nonce).get();
-        let interest_amount = self.calculate_interest(deposit_amount.clone(), epochs_waited);
+        let interest_amount = self.calculate_interest(&deposit_amount, epochs_waited);
 
         // mint required tokens and send mex tokens to the caller
         self.mint_mex_tokens(&interest_amount);
@@ -192,12 +192,12 @@ pub trait DexRewardsLock {
     }
 
     #[view(calculateInterest)]
-    fn calculate_interest(&self, deposit_amount: BigUint, epochs_waited: u64) -> BigUint {
+    fn calculate_interest(&self, deposit_amount: &BigUint, epochs_waited: u64) -> BigUint {
         let latest_reward_epoch = self.find_latest_reward_epoch(epochs_waited);
         let reward_percentage = self.get_reward_percentage_for_epochs_waited(latest_reward_epoch);
         let precision = self.precentage_precision().get();
 
-        deposit_amount * reward_percentage / precision
+        deposit_amount * &reward_percentage / precision
     }
 
     // private

@@ -74,7 +74,7 @@ pub trait ProxyPairModule {
     #[payable("*")]
     #[endpoint(acceptEsdtPaymentProxy)]
     fn accept_esdt_payment_proxy(&self, pair_address: Address) -> SCResult<()> {
-        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
 
         let token_nonce = self.call_value().esdt_token_nonce();
@@ -94,7 +94,7 @@ pub trait ProxyPairModule {
         second_token_id: TokenIdentifier,
         second_token_nonce: Nonce,
     ) -> SCResult<()> {
-        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.global_operation().require_not_ongoing());
         let caller = self.blockchain().get_caller();
         self.send_temporary_funds_back(&caller, &first_token_id, first_token_nonce);
         self.send_temporary_funds_back(&caller, &second_token_id, second_token_nonce);
@@ -112,7 +112,7 @@ pub trait ProxyPairModule {
         second_token_nonce: Nonce,
         second_token_amount_min: BigUint,
     ) -> SCResult<()> {
-        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
 
         let caller = self.blockchain().get_caller();
@@ -166,8 +166,8 @@ pub trait ProxyPairModule {
         let first_token_used = result_tuple.1;
         let second_token_used = result_tuple.2;
         require!(
-            first_token_used.token_id == first_token_id ||
-            second_token_used.token_id == second_token_id,
+            first_token_used.token_id == first_token_id
+                || second_token_used.token_id == second_token_id,
             "Bad token order"
         );
 
@@ -234,7 +234,7 @@ pub trait ProxyPairModule {
         first_token_amount_min: BigUint,
         second_token_amount_min: BigUint,
     ) -> SCResult<()> {
-        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
 
         let token_nonce = self.call_value().esdt_token_nonce();
@@ -583,14 +583,6 @@ pub trait ProxyPairModule {
         } else {
             self.temporary_funds(caller, token_id, token_nonce).clear();
         }
-    }
-
-    fn require_global_operation_not_ongoing(&self) -> SCResult<()> {
-        require!(
-            !self.global_operation().is_ongoing().get(),
-            "Global operation ongoing"
-        );
-        Ok(())
     }
 
     fn require_is_intermediated_pair(&self, address: &Address) -> SCResult<()> {

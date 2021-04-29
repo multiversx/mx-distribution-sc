@@ -13,4 +13,14 @@ pub trait GlobalOperationModule {
 
     #[storage_mapper("global_operation_ongoing")]
     fn is_ongoing(&self) -> SingleValueMapper<Self::Storage, bool>;
+
+    fn require_not_ongoing(&self) -> SCResult<()> {
+        require!(!self.is_ongoing().get(), "Global operation ongoing");
+        Ok(())
+    }
+
+    fn require_ongoing(&self) -> SCResult<()> {
+        require!(self.is_ongoing().get(), "Global operation not ongoing");
+        Ok(())
+    }
 }

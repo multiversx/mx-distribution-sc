@@ -118,10 +118,7 @@ pub trait LockedAssetModule {
     #[payable("*")]
     #[endpoint(unlockAssets)]
     fn unlock_assets(&self) -> SCResult<()> {
-        require!(
-            !self.global_operation().is_ongoing().get(),
-            "Global operation is ongoing"
-        );
+        sc_try!(self.global_operation().require_not_ongoing());
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
         require!(token_id == self.token_id().get(), "Bad payment token");

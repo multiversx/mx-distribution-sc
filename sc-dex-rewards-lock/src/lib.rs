@@ -120,7 +120,12 @@ pub trait DexRewardsLock {
         require!(amount > 0, "Must lock more than 0 tokens");
 
         let caller = self.blockchain().get_caller();
-        let percentage_reward = self.find_latest_reward_epoch(epochs_lock_time);
+        let latest_reward_epoch = self.find_latest_reward_epoch(epochs_lock_time);
+        let percentage_reward = match self.epoch_rewards_map().get(&latest_reward_epoch) {
+            Some(percentage) => percentage,
+            None => return sc_error!("Couldn't find percentage reward"),
+        };
+        
         let nft_amount =
             &amount * &BigUint::from(percentage_reward) / BigUint::from(PERCENTAGE_TOTAL);
         let unlock_epoch = self.blockchain().get_block_epoch() + epochs_lock_time;

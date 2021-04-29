@@ -3,13 +3,7 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-mod proxy_pair;
-use proxy_pair::*;
-
-mod asset;
-mod global_op;
-mod locked_asset;
-
+use modules::*;
 use distrib_common::*;
 
 const GAS_CHECK_FREQUENCY: usize = 100;

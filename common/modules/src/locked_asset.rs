@@ -7,6 +7,7 @@ pub use crate::asset::*;
 pub use crate::global_op::*;
 
 use distrib_common::*;
+use elrond_wasm::{require, sc_error, sc_try};
 
 #[elrond_wasm_derive::module(LockedAssetModuleImpl)]
 pub trait LockedAssetModule {

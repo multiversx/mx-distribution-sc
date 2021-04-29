@@ -5,9 +5,3 @@
 
 # The erdpy output
 output
-
-# VSCode config
-/.vscode
-
-# cargo lock files
-Cargo.lock

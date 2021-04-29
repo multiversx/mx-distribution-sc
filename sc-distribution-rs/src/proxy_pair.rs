@@ -71,6 +71,14 @@ pub trait ProxyPairModule {
         Ok(())
     }
 
+    #[endpoint(removeIntermediatedPair)]
+    fn remove_intermediated_pair(&self, pair_address: Address) -> SCResult<()> {
+        only_owner!(self, "Permission denied");
+        sc_try!(self.require_is_intermediated_pair(&pair_address));
+        self.intermediated_pairs().remove(&pair_address);
+        Ok(())
+    }
+
     #[payable("*")]
     #[endpoint(acceptEsdtPaymentProxy)]
     fn accept_esdt_payment_proxy(&self, pair_address: Address) -> SCResult<()> {

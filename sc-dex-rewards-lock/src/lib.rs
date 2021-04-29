@@ -29,7 +29,7 @@ pub trait DexRewardsLock {
             "Precision too low"
         );
         require!(
-            &percentage_precision / &BigUint::from(10u32) == 0,
+            &percentage_precision % &BigUint::from(10u32) == 0,
             "Precision must be a multiple of 10"
         );
         require!(

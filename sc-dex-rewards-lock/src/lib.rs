@@ -3,19 +3,24 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-// Min precision of 100, i.e. no precision
-const MIN_PRECISION: u32 = 100;
+use distrib_common::*;
+use modules::*;
 
-const NFT_AMOUNT: u32 = 1;
+const PERCENTAGE_TOTAL: u32 = 100;
 
 #[elrond_wasm_derive::contract(DexRewardsLockImpl)]
 pub trait DexRewardsLock {
+    #[module(AssetModuleImpl)]
+    fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
+
+    #[module(LockedAssetModuleImpl)]
+    fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
+
     /// Epoch refers to duration in epochs, not a specific deadline
     #[init]
     fn init(
         &self,
         mex_token_id: TokenIdentifier,
-        percentage_precision: BigUint,
         #[var_args] epoch_reward_percentage_pairs: VarArgs<MultiArg2<u64, BigUint>>,
     ) -> SCResult<()> {
         require!(
@@ -23,16 +28,11 @@ pub trait DexRewardsLock {
             "Invalid token provided"
         );
         require!(
-            percentage_precision >= BigUint::from(MIN_PRECISION),
-            "Precision too low"
-        );
-        require!(
             !epoch_reward_percentage_pairs.is_empty(),
             "Must provide at least one epoch-reward pair"
         );
 
-        self.mex_token_id().set(&mex_token_id);
-        self.precentage_precision().set(&percentage_precision);
+        self.asset().token_id().set(&mex_token_id);
 
         for pair in epoch_reward_percentage_pairs.into_vec() {
             let (epoch, percentage) = pair.into_tuple();
@@ -53,13 +53,17 @@ pub trait DexRewardsLock {
         #[payment] issue_cost: BigUint,
     ) -> SCResult<AsyncCall<BigUint>> {
         sc_try!(self.require_caller_owner());
+        require!(
+            self.locked_asset().token_id().is_empty(),
+            "NFT already issued"
+        );
 
         Ok(ESDTSystemSmartContractProxy::new()
-            .issue_non_fungible(
+            .issue_semi_fungible(
                 issue_cost,
                 &token_display_name,
                 &token_ticker,
-                NonFungibleTokenProperties {
+                SemiFungibleTokenProperties {
                     can_add_special_roles: true,
                     can_change_owner: false,
                     can_freeze: false,
@@ -104,79 +108,41 @@ pub trait DexRewardsLock {
     #[endpoint(lockMexTokens)]
     fn lock_mex_tokens(
         &self,
+        epochs_lock_time: u64,
         #[payment_token] token_id: TokenIdentifier,
         #[payment] amount: BigUint,
     ) -> SCResult<()> {
         sc_try!(self.require_nft_issued());
         require!(
-            token_id == self.mex_token_id().get(),
+            token_id == self.asset().token_id().get(),
             "Wrong token sent as payment"
         );
-        require!(amount > 0, "Must locked more than 0 tokens");
+        require!(amount > 0, "Must lock more than 0 tokens");
 
         let caller = self.blockchain().get_caller();
-        let current_epoch = self.blockchain().get_block_epoch();
-
-        // create and send NFT to user, used to reclaim the deposit later
-        self.create_nft(current_epoch);
-
-        let nft_id = self.nft_id().get();
-        let nft_nonce = self.blockchain().get_current_esdt_nft_nonce(
-            &self.blockchain().get_sc_address(),
-            nft_id.as_esdt_identifier(),
-        );
-
-        self.mex_deposit(nft_nonce).set(&amount);
-
-        match self.send().direct_esdt_nft_via_transfer_exec(
-            &caller,
-            nft_id.as_esdt_identifier(),
-            nft_nonce,
-            &BigUint::from(NFT_AMOUNT),
-            &[],
-        ) {
-            Result::Ok(()) => Ok(()),
-            Result::Err(_) => sc_error!("Failed sending NFT to caller"),
-        }
-    }
-
-    /// Paying back the NFT to retrieve the funds + the interest
-    /// No need to check the amount, as that will always be 1 (since only 1 of each if created)
-    #[payable("*")]
-    #[endpoint]
-    fn withdraw(&self, #[payment_token] nft_id: TokenIdentifier) -> SCResult<()> {
-        sc_try!(self.require_nft_issued());
-        require!(nft_id == self.nft_id().get(), "Wrong NFT sent as payment");
-
-        let nft_nonce = self.call_value().esdt_token_nonce();
-        let nft_attributes = self.blockchain().get_esdt_token_data(
-            &self.blockchain().get_sc_address(),
-            nft_id.as_esdt_identifier(),
-            nft_nonce,
-        );
-
-        let deposit_epoch = match nft_attributes.decode_attributes::<u64>() {
-            Result::Ok(attr) => attr,
-            Result::Err(_) => return sc_error!("Failed decoding attributes"),
+        let latest_reward_epoch = self.find_latest_reward_epoch(epochs_lock_time);
+        let percentage_reward = match self.epoch_rewards_map().get(&latest_reward_epoch) {
+            Some(percentage) => percentage,
+            None => return sc_error!("Couldn't find percentage reward"),
         };
-        let current_epoch = self.blockchain().get_block_epoch();
-        let epochs_waited = current_epoch - deposit_epoch;
 
-        let deposit_amount = self.mex_deposit(nft_nonce).get();
-        let interest_amount = self.calculate_interest(&deposit_amount, epochs_waited);
+        let bonus_amount = &amount * &percentage_reward / BigUint::from(PERCENTAGE_TOTAL);
+        let nft_amount = &amount + &bonus_amount;
+        let unlock_epoch = self.blockchain().get_block_epoch() + epochs_lock_time;
 
-        // mint required tokens and send mex tokens to the caller
-        self.mint_mex_tokens(&interest_amount);
-        self.send().direct(
-            &self.blockchain().get_caller(),
-            &self.mex_token_id().get(),
-            &(deposit_amount + interest_amount),
-            &[],
+        // send locked tokens as NFTs to caller
+        self.locked_asset().create_and_send(
+            &caller,
+            &self.locked_asset().token_id().get(),
+            &nft_amount,
+            &[UnlockMilestone {
+                unlock_epoch,
+                unlock_precent: PERCENTAGE_TOTAL as u8,
+            }],
         );
 
-        // burn the received nft and clear the storage
-        self.burn_nft(nft_nonce);
-        self.mex_deposit(nft_nonce).clear();
+        // burn received MEX tokens
+        self.asset().burn(&self.asset().token_id().get(), &amount);
 
         Ok(())
     }
@@ -195,42 +161,11 @@ pub trait DexRewardsLock {
     fn calculate_interest(&self, deposit_amount: &BigUint, epochs_waited: u64) -> BigUint {
         let latest_reward_epoch = self.find_latest_reward_epoch(epochs_waited);
         let reward_percentage = self.get_reward_percentage_for_epochs_waited(latest_reward_epoch);
-        let precision = self.precentage_precision().get();
 
-        deposit_amount * &reward_percentage / precision
+        deposit_amount * &reward_percentage / BigUint::from(PERCENTAGE_TOTAL)
     }
 
     // private
-
-    fn mint_mex_tokens(&self, amount: &BigUint) {
-        self.send().esdt_local_mint(
-            self.blockchain().get_gas_left(),
-            self.mex_token_id().get().as_esdt_identifier(),
-            amount,
-        );
-    }
-
-    fn create_nft(&self, deposit_epoch: u64) {
-        self.send().esdt_nft_create::<u64>(
-            self.blockchain().get_gas_left(),
-            self.nft_id().get().as_esdt_identifier(),
-            &BigUint::from(NFT_AMOUNT),
-            &BoxedBytes::empty(),
-            &BigUint::zero(),
-            &H256::zero(),
-            &deposit_epoch,
-            &[BoxedBytes::empty()],
-        );
-    }
-
-    fn burn_nft(&self, nft_nonce: u64) {
-        self.send().esdt_nft_burn(
-            self.blockchain().get_gas_left(),
-            self.nft_id().get().as_esdt_identifier(),
-            nft_nonce,
-            &BigUint::from(NFT_AMOUNT),
-        );
-    }
 
     fn require_caller_owner(&self) -> SCResult<()> {
         only_owner!(self, "Only owner may call this function");
@@ -238,7 +173,10 @@ pub trait DexRewardsLock {
     }
 
     fn require_nft_issued(&self) -> SCResult<()> {
-        require!(!self.nft_id().is_empty(), "Nft not issued yet");
+        require!(
+            !self.locked_asset().token_id().is_empty(),
+            "Nft not issued yet"
+        );
         Ok(())
     }
 
@@ -262,7 +200,7 @@ pub trait DexRewardsLock {
     ) -> OptionalResult<AsyncCall<BigUint>> {
         match result {
             AsyncCallResult::Ok(token_id) => {
-                self.nft_id().set(&token_id);
+                self.locked_asset().token_id().set(&token_id);
 
                 OptionalResult::Some(
                     ESDTSystemSmartContractProxy::new()
@@ -291,22 +229,6 @@ pub trait DexRewardsLock {
 
     // Storage
 
-    #[view(getMexTokenId)]
-    #[storage_mapper("mexTokenId")]
-    fn mex_token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
-
-    #[view(getNftId)]
-    #[storage_mapper("nftId")]
-    fn nft_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
-
-    #[view(getPrecentagePrecision)]
-    #[storage_mapper("percentagePrecision")]
-    fn precentage_precision(&self) -> SingleValueMapper<Self::Storage, BigUint>;
-
     #[storage_mapper("epochRewardsMap")]
     fn epoch_rewards_map(&self) -> MapMapper<Self::Storage, u64, BigUint>;
-
-    #[view(getMexDeposit)]
-    #[storage_mapper("mexDeposit")]
-    fn mex_deposit(&self, nft_nonce: u64) -> SingleValueMapper<Self::Storage, BigUint>;
 }

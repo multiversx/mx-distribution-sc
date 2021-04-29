@@ -8,11 +8,6 @@ pub use crate::global_op::*;
 
 use distrib_common::*;
 
-#[derive(TopEncode, TopDecode, TypeAbi)]
-pub struct LockedTokenAttributes {
-    pub unlock_milestones: Vec<UnlockMilestone>,
-}
-
 #[elrond_wasm_derive::module(LockedAssetModuleImpl)]
 pub trait LockedAssetModule {
     #[module(AssetModuleImpl)]

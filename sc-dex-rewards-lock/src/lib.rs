@@ -3,6 +3,8 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
+use distrib_common::*;
+
 // Min precision of 100, i.e. no precision
 const MIN_PRECISION: u32 = 100;
 
@@ -159,8 +161,13 @@ pub trait DexRewardsLock {
             nft_nonce,
         );
 
-        let deposit_epoch = match nft_attributes.decode_attributes::<u64>() {
-            Result::Ok(attr) => attr,
+        let deposit_epoch = match nft_attributes.decode_attributes::<LockedTokenAttributes>() {
+            Result::Ok(attr) => {
+                match attr.unlock_milestones.first() {
+                    Some(unlock_mil) => unlock_mil.unlock_epoch,
+                    None => return sc_error!("Empty attributes")
+                }
+            }
             Result::Err(_) => return sc_error!("Failed decoding attributes"),
         };
         let current_epoch = self.blockchain().get_block_epoch();
@@ -215,14 +222,19 @@ pub trait DexRewardsLock {
     }
 
     fn create_nft(&self, deposit_epoch: u64) {
-        self.send().esdt_nft_create::<u64>(
+        self.send().esdt_nft_create::<LockedTokenAttributes>(
             self.blockchain().get_gas_left(),
             self.nft_id().get().as_esdt_identifier(),
             &BigUint::from(NFT_AMOUNT),
             &BoxedBytes::empty(),
             &BigUint::zero(),
             &H256::zero(),
-            &deposit_epoch,
+            &LockedTokenAttributes {
+                unlock_milestones: [UnlockMilestone {
+                    unlock_epoch: deposit_epoch,
+                    unlock_precent: 100
+                }].to_vec()
+            },
             &[BoxedBytes::empty()],
         );
     }

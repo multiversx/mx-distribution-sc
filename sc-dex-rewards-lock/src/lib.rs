@@ -126,7 +126,7 @@ pub trait DexRewardsLock {
             None => return sc_error!("Couldn't find percentage reward"),
         };
 
-        let bonus_amount = &amount * &BigUint::from(percentage_reward) / BigUint::from(PERCENTAGE_TOTAL);
+        let bonus_amount = &amount * &percentage_reward / BigUint::from(PERCENTAGE_TOTAL);
         let nft_amount = &amount + &bonus_amount;
         let unlock_epoch = self.blockchain().get_block_epoch() + epochs_lock_time;
 

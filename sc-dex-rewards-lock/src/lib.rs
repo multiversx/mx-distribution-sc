@@ -27,6 +27,10 @@ pub trait DexRewardsLock {
             "Precision too low"
         );
         require!(
+            &percentage_precision / &BigUint::from(10u32) == 0,
+            "Precision must be a multiple of 10"
+        );
+        require!(
             !epoch_reward_percentage_pairs.is_empty(),
             "Must provide at least one epoch-reward pair"
         );

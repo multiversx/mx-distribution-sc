@@ -7,9 +7,10 @@ mod proxy_pair;
 use proxy_pair::*;
 
 mod asset;
-mod distrib_common;
 mod global_op;
 mod locked_asset;
+
+use distrib_common::*;
 
 const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;

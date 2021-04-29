@@ -64,6 +64,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "distrib-common"
+version = "0.0.0"
+dependencies = [
+ "elrond-wasm",
+ "elrond-wasm-derive",
+]
+
+[[package]]
 name = "elrond-codec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -261,6 +269,7 @@ checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
 name = "sc_distribution_rs"
 version = "0.0.0"
 dependencies = [
+ "distrib-common",
  "elrond-wasm",
  "elrond-wasm-derive",
 ]

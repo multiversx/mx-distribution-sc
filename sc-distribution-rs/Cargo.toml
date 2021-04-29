@@ -21,5 +21,8 @@ version = "0.15"
 version = "0.15"
 optional = true
 
+[dependencies.distrib-common]
+path = "../common/distrib-common"
+
 [dev-dependencies.elrond-wasm-debug]
 version = "0.15"

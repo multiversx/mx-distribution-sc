@@ -4,8 +4,9 @@ elrond_wasm::derive_imports!();
 type Nonce = u64;
 type Epoch = u64;
 pub use crate::asset::*;
-pub use crate::distrib_common::*;
 pub use crate::global_op::*;
+
+use distrib_common::*;
 
 #[derive(TopEncode, TopDecode, TypeAbi)]
 pub struct LockedTokenAttributes {

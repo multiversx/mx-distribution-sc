@@ -6,6 +6,8 @@ elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
 type Nonce = u64;
+use elrond_wasm::{contract_call, only_owner, require, sc_error, sc_try};
+
 pub use crate::asset::*;
 pub use crate::global_op::*;
 pub use crate::locked_asset::*;

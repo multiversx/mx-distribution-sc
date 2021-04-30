@@ -64,6 +64,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "distrib-common"
+version = "0.0.0"
+dependencies = [
+ "elrond-wasm",
+ "elrond-wasm-derive",
+]
+
+[[package]]
 name = "elrond-codec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -198,6 +206,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
 
 [[package]]
+name = "modules"
+version = "0.0.0"
+dependencies = [
+ "distrib-common",
+ "elrond-wasm",
+ "elrond-wasm-derive",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -261,8 +278,10 @@ checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
 name = "sc_distribution_rs"
 version = "0.0.0"
 dependencies = [
+ "distrib-common",
  "elrond-wasm",
  "elrond-wasm-derive",
+ "modules",
 ]
 
 [[package]]

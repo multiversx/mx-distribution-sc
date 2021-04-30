@@ -1,3 +1,5 @@
+#![no_std]
+
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
@@ -19,5 +21,10 @@ pub struct CommunityDistribution<BigUint: BigUintApi> {
     pub total_amount: BigUint,
     pub spread_epoch: u64,
     pub after_planning_amount: BigUint,
+    pub unlock_milestones: Vec<UnlockMilestone>,
+}
+
+#[derive(TopEncode, TopDecode, TypeAbi)]
+pub struct LockedTokenAttributes {
     pub unlock_milestones: Vec<UnlockMilestone>,
 }

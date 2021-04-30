@@ -4,13 +4,10 @@ elrond_wasm::derive_imports!();
 type Nonce = u64;
 type Epoch = u64;
 pub use crate::asset::*;
-pub use crate::distrib_common::*;
 pub use crate::global_op::*;
 
-#[derive(TopEncode, TopDecode, TypeAbi)]
-pub struct LockedTokenAttributes {
-    pub unlock_milestones: Vec<UnlockMilestone>,
-}
+use distrib_common::*;
+use elrond_wasm::{require, sc_error, sc_try};
 
 #[elrond_wasm_derive::module(LockedAssetModuleImpl)]
 pub trait LockedAssetModule {

@@ -3,13 +3,7 @@
     "steps": [
         {
             "step": "externalSteps",
-            "path": "set_user_rewards.scen.json"
-        },
-        {
-            "step": "setState",
-            "currentBlockInfo": {
-                "blockEpoch": "10"
-            }
+            "path": "set_user_distribution_with_unlock.scen.json"
         },
         {
             "step": "scCall",
@@ -18,14 +12,14 @@
                 "from": "address:user1",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "claimRewards",
+                "function": "claimAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
             },
             "expect": {
                 "out": [
-                    "100"
+                    "0"
                 ],
                 "status": "",
                 "logs": [],
@@ -39,56 +33,9 @@
                 "address:user1": {
                     "nonce": "1",
                     "balance": "100,000,000",
-                    "esdt": {
-                        "str:MEX-abcdef": "100"
-                    },
-                    "storage": {
-                        "str:ELRONDesdtMEX-abcdef": "100"
-                    }
-                },
-                "+": ""
-            }
-        },
-        {
-            "step": "setState",
-            "currentBlockInfo": {
-                "blockEpoch": "20"
-            }
-        },
-        {
-            "step": "scCall",
-            "txId": "2",
-            "tx": {
-                "from": "address:user2",
-                "to": "address:dist_contract",
-                "value": "0",
-                "function": "claimRewards",
-                "arguments": [],
-                "gasLimit": "100,000,000",
-                "gasPrice": "0"
-            },
-            "expect": {
-                "out": [
-                    "400"
-                ],
-                "status": "",
-                "logs": [],
-                "gas": "*",
-                "refund": "*"
-            }
-        },
-        {
-            "step": "checkState",
-            "accounts": {
-                "address:user2": {
-                    "nonce": "1",
-                    "balance": "100,000,000",
-                    "esdt": {
-                        "str:MEX-abcdef": "400"
-                    },
-                    "storage": {
-                        "str:ELRONDesdtMEX-abcdef": "400"
-                    }
+                    "esdt": {},
+                    "storage": {},
+                    "code": ""
                 },
                 "+": ""
             }
@@ -103,61 +50,61 @@
             "step": "scCall",
             "txId": "2",
             "tx": {
-                "from": "address:user3",
+                "from": "address:user1",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "claimRewards",
+                "function": "claimLockedAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
             },
             "expect": {
                 "out": [
-                    "900"
+                    "1", "1000"
                 ],
                 "status": "",
                 "logs": [],
                 "gas": "*",
                 "refund": "*"
-            }
-        },
-        {
-            "step": "checkState",
-            "accounts": {
-                "address:user3": {
-                    "nonce": "1",
-                    "balance": "100,000,000",
-                    "esdt": {
-                        "str:MEX-abcdef": "900"
-                    },
-                    "storage": {
-                        "str:ELRONDesdtMEX-abcdef": "900"
-                    }
-                },
-                "+": ""
-            }
-        },
-        {
-            "step": "setState",
-            "currentBlockInfo": {
-                "blockEpoch": "40"
             }
         },
         {
             "step": "scCall",
             "txId": "2",
             "tx": {
-                "from": "address:user4",
+                "from": "address:user_with_wegld1",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "claimRewards",
+                "function": "claimLockedAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
             },
             "expect": {
                 "out": [
-                    "1600"
+                    "2", "90000"
+                ],
+                "status": "",
+                "logs": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "3",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:dist_contract",
+                "value": "0",
+                "function": "getLockedTokenId",
+                "arguments": [],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "out": [
+                    "str:LKMEX-abcdef"
                 ],
                 "status": "",
                 "logs": [],
@@ -168,14 +115,16 @@
         {
             "step": "checkState",
             "accounts": {
-                "address:user4": {
-                    "nonce": "1",
+                "address:user1": {
+                    "nonce": "2",
                     "balance": "100,000,000",
                     "esdt": {
-                        "str:MEX-abcdef": "1600"
-                    },
-                    "storage": {
-                        "str:ELRONDesdtMEX-abcdef": "1600"
+                        "str:LKMEX-abcdef": [
+                            {
+                                "nonce": "0x01",
+                                "value": "1,000"
+                            }
+                        ]
                     }
                 },
                 "+": ""

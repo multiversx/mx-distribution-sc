@@ -6,42 +6,27 @@
             "path": "set_user_distribution.scen.json"
         },
         {
+            "step": "setState",
+            "currentBlockInfo": {
+                "blockEpoch": "10"
+            }
+        },
+        {
             "step": "scCall",
             "txId": "2",
             "tx": {
-                "from": "address:owner",
+                "from": "address:user1",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "startGlobalOperation",
+                "function": "claimAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
             },
             "expect": {
-                "out": [],
-                "status": "",
-                "logs": [],
-                "gas": "*",
-                "refund": "*"
-            }
-        },
-        {
-            "step": "scCall",
-            "txId": "2",
-            "tx": {
-                "from": "address:owner",
-                "to": "address:dist_contract",
-                "value": "0",
-                "function": "setCommunityDistribution",
-                "arguments": [
-                    "100,000",
-                    "50"
+                "out": [
+                    "100"
                 ],
-                "gasLimit": "100,000,000",
-                "gasPrice": "0"
-            },
-            "expect": {
-                "out": [],
                 "status": "",
                 "logs": [],
                 "gas": "*",
@@ -49,59 +34,113 @@
             }
         },
         {
-            "step": "scCall",
-            "txId": "2",
-            "tx": {
-                "from": "address:owner",
-                "to": "address:dist_contract",
-                "value": "0",
-                "function": "setPerUserDistributedAssets",
-                "arguments": [
-                    "50",
-                    "address:user1",
-                    "100",
-                    "address:user2",
-                    "200",
-                    "address:user3",
-                    "300",
-                    "address:user4",
-                    "400"
-                ],
-                "gasLimit": "100,000,000",
-                "gasPrice": "0"
-            },
-            "expect": {
-                "out": [],
-                "status": "",
-                "logs": [],
-                "gas": "*",
-                "refund": "*"
-            }
-        },
-        {
-            "step": "scCall",
-            "txId": "2",
-            "tx": {
-                "from": "address:owner",
-                "to": "address:dist_contract",
-                "value": "0",
-                "function": "endGlobalOperation",
-                "arguments": [],
-                "gasLimit": "100,000,000",
-                "gasPrice": "0"
-            },
-            "expect": {
-                "out": [],
-                "status": "",
-                "logs": [],
-                "gas": "*",
-                "refund": "*"
+            "step": "checkState",
+            "accounts": {
+                "address:user1": {
+                    "nonce": "1",
+                    "balance": "100,000,000",
+                    "esdt": {
+                        "str:MEX-abcdef": "100"
+                    },
+                    "storage": {
+                        "str:ELRONDesdtMEX-abcdef": "100"
+                    }
+                },
+                "+": ""
             }
         },
         {
             "step": "setState",
             "currentBlockInfo": {
-                "blockEpoch": "60"
+                "blockEpoch": "20"
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "2",
+            "tx": {
+                "from": "address:user2",
+                "to": "address:dist_contract",
+                "value": "0",
+                "function": "claimAssets",
+                "arguments": [],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "out": [
+                    "400"
+                ],
+                "status": "",
+                "logs": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:user2": {
+                    "nonce": "1",
+                    "balance": "100,000,000",
+                    "esdt": {
+                        "str:MEX-abcdef": "400"
+                    },
+                    "storage": {
+                        "str:ELRONDesdtMEX-abcdef": "400"
+                    }
+                },
+                "+": ""
+            }
+        },
+        {
+            "step": "setState",
+            "currentBlockInfo": {
+                "blockEpoch": "30"
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "2",
+            "tx": {
+                "from": "address:user3",
+                "to": "address:dist_contract",
+                "value": "0",
+                "function": "claimAssets",
+                "arguments": [],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "out": [
+                    "900"
+                ],
+                "status": "",
+                "logs": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:user3": {
+                    "nonce": "1",
+                    "balance": "100,000,000",
+                    "esdt": {
+                        "str:MEX-abcdef": "900"
+                    },
+                    "storage": {
+                        "str:ELRONDesdtMEX-abcdef": "900"
+                    }
+                },
+                "+": ""
+            }
+        },
+        {
+            "step": "setState",
+            "currentBlockInfo": {
+                "blockEpoch": "40"
             }
         },
         {

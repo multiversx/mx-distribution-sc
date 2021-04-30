@@ -52,7 +52,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setCommunityReward",
+                "function": "setCommunityDistribution",
                 "arguments": [
                     "100,000",
                     "10"
@@ -75,7 +75,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setPerUserRewards",
+                "function": "setPerUserDistributedAssets",
                 "arguments": [
                     "10",
                     "address:user1",

@@ -3,11 +3,10 @@
     "steps": [
         {
             "step": "externalSteps",
-            "path": "set_user_distribution.scen.json"
+            "path": "deploy.scen.json"
         },
         {
             "step": "scCall",
-            "txId": "2",
             "tx": {
                 "from": "address:owner",
                 "to": "address:dist_contract",
@@ -27,7 +26,6 @@
         },
         {
             "step": "scCall",
-            "txId": "2",
             "tx": {
                 "from": "address:owner",
                 "to": "address:dist_contract",
@@ -35,7 +33,7 @@
                 "function": "setCommunityDistribution",
                 "arguments": [
                     "100,000",
-                    "50"
+                    "10"
                 ],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
@@ -50,14 +48,13 @@
         },
         {
             "step": "scCall",
-            "txId": "2",
             "tx": {
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
                 "function": "setPerUserDistributedAssets",
                 "arguments": [
-                    "50",
+                    "10",
                     "address:user1",
                     "100",
                     "address:user2",
@@ -80,7 +77,66 @@
         },
         {
             "step": "scCall",
-            "txId": "2",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:dist_contract",
+                "value": "0",
+                "function": "endGlobalOperation",
+                "arguments": [],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "out": [],
+                "status": "",
+                "logs": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "scCall",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:dist_contract",
+                "value": "0",
+                "function": "startGlobalOperation",
+                "arguments": [],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "out": [],
+                "status": "",
+                "logs": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "scCall",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:dist_contract",
+                "value": "0",
+                "function": "undoUserDistributedAssetsBetweenEpochs",
+                "arguments": [
+                    "0",
+                    "10"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "out": ["0x04"],
+                "status": "",
+                "logs": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "scCall",
             "tx": {
                 "from": "address:owner",
                 "to": "address:dist_contract",
@@ -101,14 +157,13 @@
         {
             "step": "setState",
             "currentBlockInfo": {
-                "blockEpoch": "60"
+                "blockEpoch": "20"
             }
         },
         {
             "step": "scCall",
-            "txId": "2",
             "tx": {
-                "from": "address:user4",
+                "from": "address:user1",
                 "to": "address:dist_contract",
                 "value": "0",
                 "function": "claimAssets",
@@ -118,7 +173,7 @@
             },
             "expect": {
                 "out": [
-                    "1600"
+                    "0"
                 ],
                 "status": "",
                 "logs": [],
@@ -129,15 +184,10 @@
         {
             "step": "checkState",
             "accounts": {
-                "address:user4": {
+                "address:user1": {
                     "nonce": "1",
                     "balance": "100,000,000",
-                    "esdt": {
-                        "str:MEX-abcdef": "1600"
-                    },
-                    "storage": {
-                        "str:ELRONDesdtMEX-abcdef": "1600"
-                    }
+                    "esdt": {}
                 },
                 "+": ""
             }

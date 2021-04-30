@@ -3,7 +3,7 @@
     "steps": [
         {
             "step": "externalSteps",
-            "path": "set_user_rewards.scen.json"
+            "path": "set_user_distribution.scen.json"
         },
         {
             "step": "scCall",
@@ -12,7 +12,7 @@
                 "from": "address:user1",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "claimRewards",
+                "function": "claimAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
@@ -53,7 +53,7 @@
                 "from": "address:user1",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "claimRewards",
+                "function": "claimAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
@@ -91,7 +91,7 @@
                 "from": "address:user1",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "claimRewards",
+                "function": "claimAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"

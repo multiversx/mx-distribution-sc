@@ -3,7 +3,7 @@
     "steps": [
         {
             "step": "externalSteps",
-            "path": "deploy.scen.json"
+            "path": "set_user_distribution.scen.json"
         },
         {
             "step": "scCall",
@@ -32,10 +32,40 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setCommunityReward",
+                "function": "setCommunityDistribution",
                 "arguments": [
                     "100,000",
-                    "10"
+                    "50"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "out": [],
+                "status": "",
+                "logs": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "2",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:dist_contract",
+                "value": "0",
+                "function": "setPerUserDistributedAssets",
+                "arguments": [
+                    "50",
+                    "address:user1",
+                    "100",
+                    "address:user2",
+                    "200",
+                    "address:user3",
+                    "300",
+                    "address:user4",
+                    "400"
                 ],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
@@ -75,26 +105,6 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "getLastCommunityRewardAmountAndEpoch",
-                "arguments": [],
-                "gasLimit": "100,000,000",
-                "gasPrice": "0"
-            },
-            "expect": {
-                "out": ["100,000", "10"],
-                "status": "",
-                "logs": [],
-                "gas": "*",
-                "refund": "*"
-            }
-        },
-        {
-            "step": "scCall",
-            "txId": "2",
-            "tx": {
-                "from": "address:owner",
-                "to": "address:dist_contract",
-                "value": "0",
                 "function": "startGlobalOperation",
                 "arguments": [],
                 "gasLimit": "100,000,000",
@@ -110,18 +120,19 @@
         },
         {
             "step": "scCall",
-            "txId": "2",
             "tx": {
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "undoLastCommunityReward",
+                "function": "clearUnclaimableAssets",
                 "arguments": [],
                 "gasLimit": "100,000,000",
                 "gasPrice": "0"
             },
             "expect": {
-                "out": [],
+                "out": [
+                    "4"
+                ],
                 "status": "",
                 "logs": [],
                 "gas": "*",
@@ -142,26 +153,6 @@
             },
             "expect": {
                 "out": [],
-                "status": "",
-                "logs": [],
-                "gas": "*",
-                "refund": "*"
-            }
-        },
-        {
-            "step": "scCall",
-            "txId": "2",
-            "tx": {
-                "from": "address:owner",
-                "to": "address:dist_contract",
-                "value": "0",
-                "function": "getLastCommunityRewardAmountAndEpoch",
-                "arguments": [],
-                "gasLimit": "100,000,000",
-                "gasPrice": "0"
-            },
-            "expect": {
-                "out": ["0", "0"],
                 "status": "",
                 "logs": [],
                 "gas": "*",

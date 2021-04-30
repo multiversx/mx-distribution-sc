@@ -32,27 +32,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "startGlobalOperation",
-                "arguments": [],
-                "gasLimit": "100,000,000",
-                "gasPrice": "0"
-            },
-            "expect": {
-                "out": [],
-                "status": "",
-                "logs": [],
-                "gas": "*",
-                "refund": "*"
-            }
-        },
-        {
-            "step": "scCall",
-            "txId": "2",
-            "tx": {
-                "from": "address:owner",
-                "to": "address:dist_contract",
-                "value": "0",
-                "function": "setCommunityReward",
+                "function": "setCommunityDistribution",
                 "arguments": [
                     "100,000",
                     "10"
@@ -75,7 +55,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setPerUserRewards",
+                "function": "setPerUserDistributedAssets",
                 "arguments": [
                     "10",
                     "address:user1",
@@ -145,7 +125,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setCommunityReward",
+                "function": "setCommunityDistribution",
                 "arguments": [
                     "100,000",
                     "20"
@@ -168,7 +148,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setPerUserRewards",
+                "function": "setPerUserDistributedAssets",
                 "arguments": [
                     "20",
                     "address:user1",
@@ -238,7 +218,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setCommunityReward",
+                "function": "setCommunityDistribution",
                 "arguments": [
                     "100,000",
                     "30"
@@ -261,7 +241,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setPerUserRewards",
+                "function": "setPerUserDistributedAssets",
                 "arguments": [
                     "30",
                     "address:user1",
@@ -331,7 +311,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setCommunityReward",
+                "function": "setCommunityDistribution",
                 "arguments": [
                     "100,000",
                     "40"
@@ -354,7 +334,7 @@
                 "from": "address:owner",
                 "to": "address:dist_contract",
                 "value": "0",
-                "function": "setPerUserRewards",
+                "function": "setPerUserDistributedAssets",
                 "arguments": [
                     "40",
                     "address:user1",

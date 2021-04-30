@@ -3,8 +3,8 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-use modules::*;
 use distrib_common::*;
+use modules::*;
 
 const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
@@ -23,16 +23,21 @@ pub trait EsdtDistribution {
     #[module(ProxyPairModuleImpl)]
     fn proxy_pair(&self) -> ProxyPairModuleImpl<T, BigInt, BigUint>;
 
+    #[module(ProxyFarmModuleImpl)]
+    fn proxy_farm(&self) -> ProxyFarmModuleImpl<T, BigInt, BigUint>;
+
     #[init]
     fn init(
         &self,
         asset_token_id: TokenIdentifier,
         locked_token_id: TokenIdentifier,
         wrapped_lp_token_id: TokenIdentifier,
+        wrapped_farm_token_id: TokenIdentifier,
     ) {
         self.asset().token_id().set(&asset_token_id);
         self.locked_asset().token_id().set(&locked_token_id);
         self.proxy_pair().token_id().set(&wrapped_lp_token_id);
+        self.proxy_farm().token_id().set(&wrapped_farm_token_id);
     }
 
     #[endpoint(startGlobalOperation)]
@@ -368,6 +373,113 @@ pub trait EsdtDistribution {
         }
         sum
     }
+
+    // #[view(getDistributedTokenId)]
+    // fn test1(&self) -> TokenIdentifier {
+    //     self.asset().token_id().get()
+    // }
+
+    // #[payable("*")]
+    // #[endpoint(unlockAssets)]
+    // fn test2(&self) -> SCResult<()> {
+    //     self.locked_asset().unlock_assets()
+    // }
+
+    // #[view(getLockedTokenId)]
+    // fn test3(&self) -> TokenIdentifier {
+    //     self.locked_asset().token_id().get()
+    // }
+
+    // #[endpoint(addPairToIntermediate)]
+    // fn test4(&self, pair_address: Address) -> SCResult<()> {
+    //     self.proxy_pair().add_pair_to_intermediate(pair_address)
+    // }
+
+    // #[endpoint(removeIntermediatedPair)]
+    // fn test5(&self, pair_address: Address) -> SCResult<()> {
+    //     self.proxy_pair().remove_intermediated_pair(pair_address)
+    // }
+
+    // #[payable("*")]
+    // #[endpoint(acceptEsdtPaymentProxy)]
+    // fn test6(&self, pair_address: Address) -> SCResult<()> {
+    //     self.proxy_pair().accept_esdt_payment_proxy(pair_address)
+    // }
+
+    // #[endpoint(addFarmToIntermediate)]
+    // fn add_farm_to_intermediate(&self, farm_address: Address) -> SCResult<()> {
+    //     self.proxy_farm().add_farm_to_intermediate(farm_address)
+    // }
+
+    // #[endpoint(removeIntermediatedFarm)]
+    // fn remove_intermediated_farm(&self, farm_address: Address) -> SCResult<()> {
+    //     self.proxy_farm().remove_intermediated_farm(farm_address)
+    // }
+
+    // #[payable("*")]
+    // #[endpoint(enterFarmProxy)]
+    // fn enter_farm_proxy(&self, farm_address: &Address) -> SCResult<()> {
+    //     self.proxy_farm().enter_farm_proxy(farm_address)
+    // }
+
+    // #[payable("*")]
+    // #[endpoint(exitFarmProxy)]
+    // fn exit_farm_proxy(&self, farm_address: &Address) -> SCResult<()> {
+    //     self.proxy_farm().exit_farm_proxy(farm_address)
+    // }
+
+    // #[endpoint(reclaimTemporaryFundsProxy)]
+    // fn reclaim_temporary_funds_proxy(
+    //     &self,
+    //     first_token_id: TokenIdentifier,
+    //     first_token_nonce: Nonce,
+    //     second_token_id: TokenIdentifier,
+    //     second_token_nonce: Nonce,
+    // ) -> SCResult<()> {
+    //     self.proxy_pair().reclaim_temporary_funds_proxy(
+    //         first_token_id,
+    //         first_token_nonce,
+    //         second_token_id,
+    //         second_token_nonce,
+    //     )
+    // }
+
+    // #[endpoint(addLiquidityProxy)]
+    // fn add_liquidity_proxy(
+    //     &self,
+    //     pair_address: Address,
+    //     first_token_id: TokenIdentifier,
+    //     first_token_nonce: Nonce,
+    //     first_token_amount_min: BigUint,
+    //     second_token_id: TokenIdentifier,
+    //     second_token_nonce: Nonce,
+    //     second_token_amount_min: BigUint,
+    // ) -> SCResult<()> {
+    //     self.proxy_pair().add_liquidity_proxy(
+    //         pair_address,
+    //         first_token_id,
+    //         first_token_nonce,
+    //         first_token_amount_min,
+    //         second_token_id,
+    //         second_token_nonce,
+    //         second_token_amount_min,
+    //     )
+    // }
+
+    // #[payable("*")]
+    // #[endpoint(removeLiquidityProxy)]
+    // fn remove_liquidity_proxy(
+    //     &self,
+    //     pair_address: Address,
+    //     first_token_amount_min: BigUint,
+    //     second_token_amount_min: BigUint,
+    // ) -> SCResult<()> {
+    //     self.proxy_pair().remove_liquidity_proxy(
+    //         pair_address,
+    //         first_token_amount_min,
+    //         second_token_amount_min,
+    //     )
+    // }
 
     #[storage_mapper("community_distribution_list")]
     fn community_distribution_list(

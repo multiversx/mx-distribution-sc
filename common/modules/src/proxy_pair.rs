@@ -33,8 +33,8 @@ pub struct TokenAmountPair<BigUint: BigUintApi> {
 
 #[derive(TopEncode, TopDecode, TypeAbi)]
 pub struct WrappedLpTokenAttributes<BigUint: BigUintApi> {
-    lp_token_id: TokenIdentifier,
-    lp_token_total_amount: BigUint,
+    pub lp_token_id: TokenIdentifier,
+    pub lp_token_total_amount: BigUint,
     locked_assets_invested: BigUint,
     locked_assets_nonce: Nonce,
 }

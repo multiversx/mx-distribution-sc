@@ -37,11 +37,9 @@ pub trait LockedAssetModule {
         amount: &BigUint,
         unlock_milestones: &[UnlockMilestone],
     ) {
-        if amount > &0 {
-            self.create_tokens(&token_id, &amount, unlock_milestones);
-            let current_nonce = self.token_nonce().get();
-            self.send_tokens(&token_id, current_nonce, &amount, &caller);
-        }
+        self.create_tokens(&token_id, &amount, unlock_milestones);
+        let current_nonce = self.token_nonce().get();
+        self.send_tokens(&token_id, current_nonce, &amount, &caller);
     }
 
     fn create_tokens(
@@ -50,30 +48,33 @@ pub trait LockedAssetModule {
         amount: &BigUint,
         unlock_milestones: &[UnlockMilestone],
     ) {
-        let attributes = LockedTokenAttributes {
-            unlock_milestones: unlock_milestones.to_vec(),
-        };
-        self.send().esdt_nft_create::<LockedTokenAttributes>(
-            self.blockchain().get_gas_left(),
-            token.as_esdt_identifier(),
-            amount,
-            &BoxedBytes::empty(),
-            &BigUint::zero(),
-            &H256::zero(),
-            &attributes,
-            &[BoxedBytes::empty()],
-        );
-
-        self.increase_nonce();
+        if amount > &0 {
+            let attributes = LockedTokenAttributes {
+                unlock_milestones: unlock_milestones.to_vec(),
+            };
+            self.send().esdt_nft_create::<LockedTokenAttributes>(
+                self.blockchain().get_gas_left(),
+                token.as_esdt_identifier(),
+                amount,
+                &BoxedBytes::empty(),
+                &BigUint::zero(),
+                &H256::zero(),
+                &attributes,
+                &[BoxedBytes::empty()],
+            );
+            self.increase_nonce();
+        }
     }
 
     fn burn_tokens(&self, token: &TokenIdentifier, nonce: Nonce, amount: &BigUint) {
-        self.send().esdt_nft_burn(
-            self.blockchain().get_gas_left(),
-            token.as_esdt_identifier(),
-            nonce,
-            amount,
-        );
+        if amount > &0 {
+            self.send().esdt_nft_burn(
+                self.blockchain().get_gas_left(),
+                token.as_esdt_identifier(),
+                nonce,
+                amount,
+            );
+        }
     }
 
     fn send_tokens(
@@ -83,13 +84,15 @@ pub trait LockedAssetModule {
         amount: &BigUint,
         address: &Address,
     ) {
-        let _ = self.send().direct_esdt_nft_via_transfer_exec(
-            address,
-            token_id.as_esdt_identifier(),
-            nonce,
-            &amount,
-            &[],
-        );
+        if amount > &0 {
+            let _ = self.send().direct_esdt_nft_via_transfer_exec(
+                address,
+                token_id.as_esdt_identifier(),
+                nonce,
+                &amount,
+                &[],
+            );
+        }
     }
 
     fn get_attributes(

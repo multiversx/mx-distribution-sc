@@ -36,6 +36,10 @@ pub trait DexRewardsLock {
 
         for pair in epoch_reward_percentage_pairs.into_vec() {
             let (epoch, percentage) = pair.into_tuple();
+
+            require!(epoch > 0, "Can't have lock time for 0 epochs");
+            require!(percentage > 0, "Percentage must be higher than 0");
+
             self.epoch_rewards_map().insert(epoch, percentage);
         }
 
@@ -84,6 +88,9 @@ pub trait DexRewardsLock {
             "There is already a reward set for that epoch"
         );
 
+        require!(epoch > 0, "Can't have lock time for 0 epochs");
+        require!(percentage > 0, "Percentage must be higher than 0");
+
         self.epoch_rewards_map().insert(epoch, percentage);
 
         Ok(())
@@ -99,6 +106,8 @@ pub trait DexRewardsLock {
 
         self.epoch_rewards_map().remove(&epoch);
 
+        require!(!self.epoch_rewards_map().is_empty(), "Can't remove all epoch rewards");
+
         Ok(())
     }
 
@@ -111,7 +120,7 @@ pub trait DexRewardsLock {
         epochs_lock_time: u64,
         #[payment_token] token_id: TokenIdentifier,
         #[payment] amount: BigUint,
-    ) -> SCResult<()> {
+    ) -> SCResult<u64> {
         sc_try!(self.require_nft_issued());
         require!(
             token_id == self.asset().token_id().get(),
@@ -121,14 +130,15 @@ pub trait DexRewardsLock {
 
         let caller = self.blockchain().get_caller();
         let latest_reward_epoch = self.find_latest_reward_epoch(epochs_lock_time);
-        let percentage_reward = match self.epoch_rewards_map().get(&latest_reward_epoch) {
-            Some(percentage) => percentage,
-            None => return sc_error!("Couldn't find percentage reward"),
-        };
 
-        let bonus_amount = &amount * &percentage_reward / BigUint::from(PERCENTAGE_TOTAL);
-        let nft_amount = &amount + &bonus_amount;
-        let unlock_epoch = self.blockchain().get_block_epoch() + epochs_lock_time;
+        require!(
+            latest_reward_epoch > 0,
+            "Could not lock, epoch lock time too low"
+        );
+
+        let interest = self.calculate_interest(&amount, latest_reward_epoch);
+        let nft_amount = &amount + &interest;
+        let unlock_epoch = self.blockchain().get_block_epoch() + latest_reward_epoch;
 
         // send locked tokens as NFTs to caller
         self.locked_asset().create_and_send(
@@ -144,7 +154,7 @@ pub trait DexRewardsLock {
         // burn received MEX tokens
         self.asset().burn(&self.asset().token_id().get(), &amount);
 
-        Ok(())
+        Ok(latest_reward_epoch)
     }
 
     // views
@@ -158,11 +168,14 @@ pub trait DexRewardsLock {
     }
 
     #[view(calculateInterest)]
-    fn calculate_interest(&self, deposit_amount: &BigUint, epochs_waited: u64) -> BigUint {
-        let latest_reward_epoch = self.find_latest_reward_epoch(epochs_waited);
-        let reward_percentage = self.get_reward_percentage_for_epochs_waited(latest_reward_epoch);
+    fn calculate_interest_endpoint(
+        &self,
+        deposit_amount: &BigUint,
+        epoch_lock_time: u64,
+    ) -> BigUint {
+        let latest_reward_epoch = self.find_latest_reward_epoch(epoch_lock_time);
 
-        deposit_amount * &reward_percentage / BigUint::from(PERCENTAGE_TOTAL)
+        self.calculate_interest(&deposit_amount, latest_reward_epoch)
     }
 
     // private
@@ -183,12 +196,23 @@ pub trait DexRewardsLock {
     fn find_latest_reward_epoch(&self, epochs_waited: u64) -> u64 {
         let mut latest_valid_epoch = 0;
         for reward_epoch in self.epoch_rewards_map().keys() {
+            if epochs_waited == reward_epoch {
+                latest_valid_epoch = reward_epoch;
+                break;
+            }
+
             if epochs_waited > reward_epoch && latest_valid_epoch < reward_epoch {
                 latest_valid_epoch = reward_epoch;
             }
         }
 
         latest_valid_epoch
+    }
+
+    fn calculate_interest(&self, deposit_amount: &BigUint, epochs_lock_time: u64) -> BigUint {
+        let reward_percentage = self.get_reward_percentage_for_epochs_waited(epochs_lock_time);
+
+        deposit_amount * &reward_percentage / BigUint::from(PERCENTAGE_TOTAL)
     }
 
     // callbacks

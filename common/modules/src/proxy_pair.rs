@@ -12,16 +12,16 @@ pub use crate::asset::*;
 pub use crate::locked_asset::*;
 use core::cmp::min;
 
-const ADD_LIQUIDITY_GAS_LIMIT: u64 = 30000000;
-const ACCEPT_ESDT_PAYMENT_GAS_LIMIT: u64 = 25000000;
-const ASK_FOR_LP_TOKEN_ID_GAS_LIMIT: u64 = 25000000;
-const ASK_FOR_TOKENS_GAS_LIMIT: u64 = 25000000;
-const REMOVE_LIQUIDITY_GAS_LIMIT: u64 = 40000000;
-const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
-const MINT_TOKENS_GAS_LIMIT: u64 = 5000000;
-
-const ACCEPT_ESDT_PAYMENT_FUNC_NAME: &[u8] = b"acceptEsdtPayment";
-const REMOVE_LIQUIDITY_FUNC_NAME: &[u8] = b"removeLiquidity";
+#[derive(TopEncode, TopDecode, TypeAbi)]
+pub struct ProxyPairParams {
+    pub add_liquidity_gas_limit: u64,
+    pub accept_esdt_payment_gas_limit: u64,
+    pub ask_for_lp_token_gas_limit: u64,
+    pub ask_for_tokens_gas_limit: u64,
+    pub remove_liquidity_gas_limit: u64,
+    pub burn_tokens_gas_limit: u64,
+    pub mint_tokens_gas_limit: u64,
+}
 
 type AddLiquidityResultType<BigUint> =
     MultiResult3<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
@@ -55,6 +55,8 @@ pub trait PairContract {
         amount: BigUint,
     ) -> ContractCall<BigUint, MultiResult2<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>>;
 }
+const ACCEPT_ESDT_PAYMENT_FUNC_NAME: &[u8] = b"acceptEsdtPayment";
+const REMOVE_LIQUIDITY_FUNC_NAME: &[u8] = b"removeLiquidity";
 
 #[elrond_wasm_derive::module(ProxyPairModuleImpl)]
 pub trait ProxyPairModule {
@@ -64,16 +66,23 @@ pub trait ProxyPairModule {
     #[module(LockedAssetModuleImpl)]
     fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
 
+    #[endpoint(setProxyParams)]
+    fn set_proxy_params(&self, proxy_params: ProxyPairParams) -> SCResult<()> {
+        sc_try!(self.require_permissions());
+        self.params().set(&proxy_params);
+        Ok(())
+    }
+
     #[endpoint(addPairToIntermediate)]
     fn add_pair_to_intermediate(&self, pair_address: Address) -> SCResult<()> {
-        only_owner!(self, "Permission denied");
+        sc_try!(self.require_permissions());
         self.intermediated_pairs().insert(pair_address);
         Ok(())
     }
 
     #[endpoint(removeIntermediatedPair)]
     fn remove_intermediated_pair(&self, pair_address: Address) -> SCResult<()> {
-        only_owner!(self, "Permission denied");
+        sc_try!(self.require_permissions());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
         self.intermediated_pairs().remove(&pair_address);
         Ok(())
@@ -119,6 +128,8 @@ pub trait ProxyPairModule {
         second_token_amount_min: BigUint,
     ) -> SCResult<()> {
         sc_try!(self.require_is_intermediated_pair(&pair_address));
+        sc_try!(self.require_params_not_empty());
+        let proxy_params = self.params().get();
 
         let caller = self.blockchain().get_caller();
         require!(first_token_id != second_token_id, "Identical tokens");
@@ -147,16 +158,21 @@ pub trait ProxyPairModule {
             &first_token_id,
             first_token_nonce,
             &first_token_amount,
+            &proxy_params,
         ));
         sc_try!(self.forward_to_pair(
             &pair_address,
             &second_token_id,
             second_token_nonce,
             &second_token_amount,
+            &proxy_params,
         ));
 
         // Actual adding of liquidity
-        let gas_limit = core::cmp::min(self.blockchain().get_gas_left(), ADD_LIQUIDITY_GAS_LIMIT);
+        let gas_limit = core::cmp::min(
+            self.blockchain().get_gas_left(),
+            proxy_params.add_liquidity_gas_limit,
+        );
         let result = contract_call!(self, pair_address, PairContractProxy)
             .addLiquidity(
                 first_token_amount.clone(),
@@ -191,7 +207,7 @@ pub trait ProxyPairModule {
                 &asset_token_id,
                 0,
                 &unused_minted_assets,
-                BURN_TOKENS_GAS_LIMIT,
+                proxy_params.burn_tokens_gas_limit,
             );
             locked_asset_token_nonce = first_token_nonce;
 
@@ -214,7 +230,7 @@ pub trait ProxyPairModule {
                 &asset_token_id,
                 0,
                 &unused_minted_assets,
-                BURN_TOKENS_GAS_LIMIT,
+                proxy_params.burn_tokens_gas_limit,
             );
             locked_asset_token_nonce = second_token_nonce;
 
@@ -254,6 +270,8 @@ pub trait ProxyPairModule {
         second_token_amount_min: BigUint,
     ) -> SCResult<()> {
         sc_try!(self.require_is_intermediated_pair(&pair_address));
+        sc_try!(self.require_params_not_empty());
+        let proxy_params = self.params().get();
 
         let token_nonce = self.call_value().esdt_token_nonce();
         require!(token_nonce != 0, "Can only be called with an SFT");
@@ -264,19 +282,21 @@ pub trait ProxyPairModule {
         require!(token_id == wrapped_lp_token_id, "Wrong input token");
 
         let caller = self.blockchain().get_caller();
-        let lp_token_id = self.ask_for_lp_token_id(&pair_address);
+        let lp_token_id = self.ask_for_lp_token_id(&pair_address, &proxy_params);
         let attributes = sc_try!(self.get_attributes(&token_id, token_nonce));
         require!(lp_token_id == attributes.lp_token_id, "Bad input address");
 
         let locked_asset_token_id = self.locked_asset().token_id().get();
         let asset_token_id = self.asset().token_id().get();
-        let tokens_for_position = self.ask_for_tokens_for_position(&pair_address, &amount);
+        let tokens_for_position =
+            self.ask_for_tokens_for_position(&pair_address, &amount, &proxy_params);
         sc_try!(self.actual_remove_liquidity(
             &pair_address,
             &lp_token_id,
             &amount,
             &first_token_amount_min,
             &second_token_amount_min,
+            &proxy_params
         ));
 
         let fungible_token_id: TokenIdentifier;
@@ -321,7 +341,7 @@ pub trait ProxyPairModule {
                 &asset_token_id,
                 0,
                 &locked_assets_invested,
-                BURN_TOKENS_GAS_LIMIT,
+                proxy_params.burn_tokens_gas_limit,
             );
         } else if assets_received < locked_assets_invested {
             let difference = locked_assets_invested - assets_received.clone();
@@ -329,20 +349,28 @@ pub trait ProxyPairModule {
                 &locked_asset_token_id,
                 attributes.locked_assets_nonce,
                 &difference,
-                BURN_TOKENS_GAS_LIMIT,
+                proxy_params.burn_tokens_gas_limit,
             );
-            self.send()
-                .burn_tokens(&asset_token_id, 0, &assets_received, BURN_TOKENS_GAS_LIMIT);
+            self.send().burn_tokens(
+                &asset_token_id,
+                0,
+                &assets_received,
+                proxy_params.burn_tokens_gas_limit,
+            );
         } else {
-            self.send()
-                .burn_tokens(&asset_token_id, 0, &assets_received, BURN_TOKENS_GAS_LIMIT);
+            self.send().burn_tokens(
+                &asset_token_id,
+                0,
+                &assets_received,
+                proxy_params.burn_tokens_gas_limit,
+            );
         }
 
         self.send().burn_tokens(
             &wrapped_lp_token_id,
             token_nonce,
             &amount,
-            BURN_TOKENS_GAS_LIMIT,
+            proxy_params.burn_tokens_gas_limit,
         );
         Ok(())
     }
@@ -354,6 +382,7 @@ pub trait ProxyPairModule {
         liquidity: &BigUint,
         first_token_amount_min: &BigUint,
         second_token_amount_min: &BigUint,
+        proxy_params: &ProxyPairParams,
     ) -> SCResult<()> {
         let mut arg_buffer = ArgBuffer::new();
         arg_buffer.push_argument_bytes(&first_token_amount_min.to_bytes_be());
@@ -362,7 +391,10 @@ pub trait ProxyPairModule {
             pair_address,
             lp_token_id.as_esdt_identifier(),
             liquidity,
-            min(self.blockchain().get_gas_left(), REMOVE_LIQUIDITY_GAS_LIMIT),
+            min(
+                self.blockchain().get_gas_left(),
+                proxy_params.remove_liquidity_gas_limit,
+            ),
             REMOVE_LIQUIDITY_FUNC_NAME,
             &arg_buffer,
         );
@@ -373,10 +405,14 @@ pub trait ProxyPairModule {
         }
     }
 
-    fn ask_for_lp_token_id(&self, pair_address: &Address) -> TokenIdentifier {
+    fn ask_for_lp_token_id(
+        &self,
+        pair_address: &Address,
+        proxy_params: &ProxyPairParams,
+    ) -> TokenIdentifier {
         let gas_limit = core::cmp::min(
             self.blockchain().get_gas_left(),
-            ASK_FOR_LP_TOKEN_ID_GAS_LIMIT,
+            proxy_params.ask_for_lp_token_gas_limit,
         );
         contract_call!(self, pair_address.clone(), PairContractProxy)
             .getLpTokenIdentifier()
@@ -387,8 +423,12 @@ pub trait ProxyPairModule {
         &self,
         pair_address: &Address,
         liquidity: &BigUint,
+        proxy_params: &ProxyPairParams,
     ) -> (TokenAmountPair<BigUint>, TokenAmountPair<BigUint>) {
-        let gas_limit = core::cmp::min(self.blockchain().get_gas_left(), ASK_FOR_TOKENS_GAS_LIMIT);
+        let gas_limit = core::cmp::min(
+            self.blockchain().get_gas_left(),
+            proxy_params.ask_for_lp_token_gas_limit,
+        );
         let result = contract_call!(self, pair_address.clone(), PairContractProxy)
             .getTokensForGivenPosition(liquidity.clone())
             .execute_on_dest_context(gas_limit, self.send());
@@ -482,6 +522,7 @@ pub trait ProxyPairModule {
         token_id: &TokenIdentifier,
         token_nonce: Nonce,
         amount: &BigUint,
+        proxy_params: &ProxyPairParams,
     ) -> SCResult<()> {
         let token_to_send: TokenIdentifier;
         if token_nonce == 0 {
@@ -489,7 +530,10 @@ pub trait ProxyPairModule {
         } else {
             let asset_token_id = self.asset().token_id().get();
             self.send().esdt_local_mint(
-                MINT_TOKENS_GAS_LIMIT,
+                min(
+                    self.blockchain().get_gas_left(),
+                    proxy_params.mint_tokens_gas_limit,
+                ),
                 &asset_token_id.as_esdt_identifier(),
                 amount,
             );
@@ -501,7 +545,7 @@ pub trait ProxyPairModule {
             amount,
             min(
                 self.blockchain().get_gas_left(),
-                ACCEPT_ESDT_PAYMENT_GAS_LIMIT,
+                proxy_params.accept_esdt_payment_gas_limit,
             ),
             ACCEPT_ESDT_PAYMENT_FUNC_NAME,
             &ArgBuffer::new(),
@@ -557,6 +601,16 @@ pub trait ProxyPairModule {
         Ok(())
     }
 
+    fn require_permissions(&self) -> SCResult<()> {
+        only_owner!(self, "Permission denied");
+        Ok(())
+    }
+
+    fn require_params_not_empty(&self) -> SCResult<()> {
+        require!(!self.params().is_empty(), "Empty proxy_params");
+        Ok(())
+    }
+
     #[view(getTemporaryFunds)]
     #[storage_mapper("funds")]
     fn temporary_funds(
@@ -576,4 +630,7 @@ pub trait ProxyPairModule {
 
     #[storage_mapper("wrapped_tp_token_nonce")]
     fn token_nonce(&self) -> SingleValueMapper<Self::Storage, Nonce>;
+
+    #[storage_mapper("proxy_farm_params")]
+    fn params(&self) -> SingleValueMapper<Self::Storage, ProxyPairParams>;
 }

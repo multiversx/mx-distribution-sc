@@ -89,7 +89,8 @@
                             "lastNonce": "2",
                             "roles": [
                                 "ESDTRoleNFTCreate",
-                                "ESDTRoleNFTBurn"
+                                "ESDTRoleNFTBurn",
+                                "ESDTRoleNFTAddQuantity"
                             ]
                         }
                     },

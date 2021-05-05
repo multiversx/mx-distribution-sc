@@ -36,6 +36,7 @@ pub struct TokenAmountPair<BigUint: BigUintApi> {
 pub struct WrappedLpTokenAttributes<BigUint: BigUintApi> {
     pub lp_token_id: TokenIdentifier,
     pub lp_token_total_amount: BigUint,
+    locked_assets_token_id: TokenIdentifier,
     locked_assets_invested: BigUint,
     locked_assets_nonce: Nonce,
 }
@@ -63,9 +64,6 @@ pub trait ProxyPairModule {
     #[module(AssetModuleImpl)]
     fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
 
-    #[module(LockedAssetModuleImpl)]
-    fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
-
     #[endpoint(setProxyParams)]
     fn set_proxy_params(&self, proxy_params: ProxyPairParams) -> SCResult<()> {
         sc_try!(self.require_permissions());
@@ -85,6 +83,21 @@ pub trait ProxyPairModule {
         sc_try!(self.require_permissions());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
         self.intermediated_pairs().remove(&pair_address);
+        Ok(())
+    }
+
+    #[endpoint(addAcceptedLockedAssetTokenId)]
+    fn add_accepted_locked_asset_token_id(&self, token_id: TokenIdentifier) -> SCResult<()> {
+        sc_try!(self.require_permissions());
+        self.accepted_locked_assets().insert(token_id);
+        Ok(())
+    }
+
+    #[endpoint(removeAcceptedLockedAssetTokenId)]
+    fn remove_accepted_locked_asset_token_id(&self, token_id: TokenIdentifier) -> SCResult<()> {
+        sc_try!(self.require_permissions());
+        sc_try!(self.require_is_accepted_locked_asset(&token_id));
+        self.accepted_locked_assets().remove(&token_id);
         Ok(())
     }
 
@@ -138,11 +151,13 @@ pub trait ProxyPairModule {
                 || (first_token_nonce != 0 && second_token_nonce == 0),
             "This endpoint accepts one Fungible and one SemiFungible"
         );
-        let locked_asset_token_id = self.locked_asset().token_id().get();
-        require!(
-            first_token_id == locked_asset_token_id || second_token_id == locked_asset_token_id,
-            "One token should be the locked asset token"
-        );
+        let locked_asset_token_id = if self.accepted_locked_assets().contains(&first_token_id) {
+            first_token_id.clone()
+        } else if self.accepted_locked_assets().contains(&second_token_id) {
+            second_token_id.clone()
+        } else {
+            return sc_error!("One token should be an accepted locked asset token")
+        };
         let first_token_amount = self
             .temporary_funds(&caller, &first_token_id, first_token_nonce)
             .get();
@@ -253,6 +268,7 @@ pub trait ProxyPairModule {
         self.create_and_send_wrapped_lp_token(
             &lp_received.token_id,
             &lp_received.amount,
+            &locked_asset_token_id,
             &consumed_locked_tokens,
             locked_asset_token_nonce,
             &caller,
@@ -286,7 +302,7 @@ pub trait ProxyPairModule {
         let attributes = sc_try!(self.get_attributes(&token_id, token_nonce));
         require!(lp_token_id == attributes.lp_token_id, "Bad input address");
 
-        let locked_asset_token_id = self.locked_asset().token_id().get();
+        let locked_asset_token_id = attributes.locked_assets_token_id;
         let asset_token_id = self.asset().token_id().get();
         let tokens_for_position =
             self.ask_for_tokens_for_position(&pair_address, &amount, &proxy_params);
@@ -459,6 +475,7 @@ pub trait ProxyPairModule {
         &self,
         lp_token_id: &TokenIdentifier,
         lp_token_amount: &BigUint,
+        locked_token_id: &TokenIdentifier,
         locked_tokens_consumed: &BigUint,
         locked_tokens_nonce: Nonce,
         caller: &Address,
@@ -468,6 +485,7 @@ pub trait ProxyPairModule {
             &wrapped_lp_token_id,
             lp_token_id,
             lp_token_amount,
+            locked_token_id,
             locked_tokens_consumed,
             locked_tokens_nonce,
         );
@@ -481,12 +499,14 @@ pub trait ProxyPairModule {
         wrapped_lp_token_id: &TokenIdentifier,
         lp_token_id: &TokenIdentifier,
         lp_token_amount: &BigUint,
+        locked_token_id: &TokenIdentifier,
         locked_tokens_consumed: &BigUint,
         locked_tokens_nonce: Nonce,
     ) {
         let attributes = WrappedLpTokenAttributes::<BigUint> {
             lp_token_id: lp_token_id.clone(),
             lp_token_total_amount: lp_token_amount.clone(),
+            locked_assets_token_id: locked_token_id.clone(),
             locked_assets_invested: locked_tokens_consumed.clone(),
             locked_assets_nonce: locked_tokens_nonce,
         };
@@ -601,6 +621,14 @@ pub trait ProxyPairModule {
         Ok(())
     }
 
+    fn require_is_accepted_locked_asset(&self, token_id: &TokenIdentifier) -> SCResult<()> {
+        require!(
+            self.accepted_locked_assets().contains(token_id),
+            "Not an accepted locked asset"
+        );
+        Ok(())
+    }
+
     fn require_permissions(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
         Ok(())
@@ -623,6 +651,10 @@ pub trait ProxyPairModule {
     #[view(getIntermediatedPairs)]
     #[storage_mapper("intermediated_pairs")]
     fn intermediated_pairs(&self) -> SetMapper<Self::Storage, Address>;
+
+    #[view(getAcceptedLockedAssetsTokenIds)]
+    #[storage_mapper("accepted_locked_assets")]
+    fn accepted_locked_assets(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
 
     #[view(getWrappedLpTokenId)]
     #[storage_mapper("wrapped_lp_token_id")]

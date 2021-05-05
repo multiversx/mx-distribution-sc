@@ -18,6 +18,8 @@ const ACCEPT_ESDT_PAYMENT_GAS_LIMIT: u64 = 25000000;
 const ASK_FOR_LP_TOKEN_ID_GAS_LIMIT: u64 = 25000000;
 const ASK_FOR_TOKENS_GAS_LIMIT: u64 = 25000000;
 const REMOVE_LIQUIDITY_GAS_LIMIT: u64 = 40000000;
+const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
+const MINT_TOKENS_GAS_LIMIT: u64 = 5000000;
 
 const ACCEPT_ESDT_PAYMENT_FUNC_NAME: &[u8] = b"acceptEsdtPayment";
 const REMOVE_LIQUIDITY_FUNC_NAME: &[u8] = b"removeLiquidity";
@@ -89,7 +91,7 @@ pub trait ProxyPairModule {
 
         let token_nonce = self.call_value().esdt_token_nonce();
         let (amount, token_id) = self.call_value().payment_token_pair();
-        require!(amount != 0, "Paymend amount cannot be zero");
+        require!(amount != 0, "Payment amount cannot be zero");
 
         let caller = self.blockchain().get_caller();
         self.increase_temporary_funds_amount(&caller, &token_id, token_nonce, &amount);
@@ -176,6 +178,10 @@ pub trait ProxyPairModule {
         let first_token_used = result_tuple.1;
         let second_token_used = result_tuple.2;
         require!(
+            lp_received.amount > 0,
+            "LP token amount should be greater than 0"
+        );
+        require!(
             first_token_used.token_id == first_token_id
                 || second_token_used.token_id == second_token_id,
             "Bad token order"
@@ -188,7 +194,12 @@ pub trait ProxyPairModule {
         if first_token_used.token_id == asset_token_id {
             consumed_locked_tokens = first_token_used.amount;
             let unused_minted_assets = first_token_amount - consumed_locked_tokens.clone();
-            self.asset().burn(&asset_token_id, &unused_minted_assets);
+            self.send().burn_tokens(
+                &asset_token_id,
+                0,
+                &unused_minted_assets,
+                BURN_TOKENS_GAS_LIMIT,
+            );
             locked_asset_token_nonce = first_token_nonce;
 
             self.decrease_temporary_funds_amount(
@@ -206,7 +217,12 @@ pub trait ProxyPairModule {
         } else if second_token_used.token_id == asset_token_id {
             consumed_locked_tokens = second_token_used.amount;
             let unused_minted_assets = second_token_amount - consumed_locked_tokens.clone();
-            self.asset().burn(&asset_token_id, &unused_minted_assets);
+            self.send().burn_tokens(
+                &asset_token_id,
+                0,
+                &unused_minted_assets,
+                BURN_TOKENS_GAS_LIMIT,
+            );
             locked_asset_token_nonce = second_token_nonce;
 
             self.decrease_temporary_funds_amount(
@@ -250,7 +266,7 @@ pub trait ProxyPairModule {
         let token_nonce = self.call_value().esdt_token_nonce();
         require!(token_nonce != 0, "Can only be called with an SFT");
         let (amount, token_id) = self.call_value().payment_token_pair();
-        require!(amount != 0, "Paymend amount cannot be zero");
+        require!(amount != 0, "Payment amount cannot be zero");
 
         let wrapped_lp_token_id = self.token_id().get();
         require!(token_id == wrapped_lp_token_id, "Wrong input token");
@@ -293,10 +309,11 @@ pub trait ProxyPairModule {
         }
 
         //Send back the tokens removed from pair sc.
-        self.direct_transfer_fungible(&caller, &fungible_token_id, &fungible_token_amount);
+        self.send()
+            .transfer_tokens(&fungible_token_id, 0, &fungible_token_amount, &caller);
         let locked_assets_to_send =
             core::cmp::min(assets_received.clone(), locked_assets_invested.clone());
-        self.locked_asset().send_tokens(
+        self.send().transfer_tokens(
             &locked_asset_token_id,
             attributes.locked_assets_nonce,
             &locked_assets_to_send,
@@ -306,31 +323,36 @@ pub trait ProxyPairModule {
         //Do cleanup
         if assets_received > locked_assets_invested {
             let difference = assets_received - locked_assets_invested.clone();
-            self.direct_transfer_fungible(&caller, &asset_token_id, &difference);
-            self.asset().burn(&asset_token_id, &locked_assets_invested);
+            self.send()
+                .transfer_tokens(&asset_token_id, 0, &difference, &caller);
+            self.send().burn_tokens(
+                &asset_token_id,
+                0,
+                &locked_assets_invested,
+                BURN_TOKENS_GAS_LIMIT,
+            );
         } else if assets_received < locked_assets_invested {
             let difference = locked_assets_invested - assets_received.clone();
-            self.locked_asset().burn_tokens(
+            self.send().burn_tokens(
                 &locked_asset_token_id,
                 attributes.locked_assets_nonce,
                 &difference,
+                BURN_TOKENS_GAS_LIMIT,
             );
-            self.asset().burn(&asset_token_id, &assets_received);
+            self.send()
+                .burn_tokens(&asset_token_id, 0, &assets_received, BURN_TOKENS_GAS_LIMIT);
         } else {
-            self.asset().burn(&asset_token_id, &assets_received);
+            self.send()
+                .burn_tokens(&asset_token_id, 0, &assets_received, BURN_TOKENS_GAS_LIMIT);
         }
 
-        self.burn_tokens(&wrapped_lp_token_id, token_nonce, &amount);
-        Ok(())
-    }
-
-    fn burn_tokens(&self, token: &TokenIdentifier, nonce: Nonce, amount: &BigUint) {
-        self.send().esdt_nft_burn(
-            self.blockchain().get_gas_left(),
-            token.as_esdt_identifier(),
-            nonce,
-            amount,
+        self.send().burn_tokens(
+            &wrapped_lp_token_id,
+            token_nonce,
+            &amount,
+            BURN_TOKENS_GAS_LIMIT,
         );
+        Ok(())
     }
 
     fn actual_remove_liquidity(
@@ -418,23 +440,8 @@ pub trait ProxyPairModule {
             locked_tokens_nonce,
         );
         let nonce = self.token_nonce().get();
-        self.send_wrapped_lp_token(&wrapped_lp_token_id, nonce, lp_token_amount, caller);
-    }
-
-    fn send_wrapped_lp_token(
-        &self,
-        wrapped_lp_token_id: &TokenIdentifier,
-        wrapped_lp_token_nonce: Nonce,
-        amount: &BigUint,
-        caller: &Address,
-    ) {
-        let _ = self.send().direct_esdt_nft_via_transfer_exec(
-            caller,
-            wrapped_lp_token_id.as_esdt_identifier(),
-            wrapped_lp_token_nonce,
-            &amount,
-            &[],
-        );
+        self.send()
+            .transfer_tokens(&wrapped_lp_token_id, nonce, lp_token_amount, caller);
     }
 
     fn create_wrapped_lp_token(
@@ -451,7 +458,6 @@ pub trait ProxyPairModule {
             locked_assets_invested: locked_tokens_consumed.clone(),
             locked_assets_nonce: locked_tokens_nonce,
         };
-
         self.send()
             .esdt_nft_create::<WrappedLpTokenAttributes<BigUint>>(
                 self.blockchain().get_gas_left(),
@@ -463,7 +469,6 @@ pub trait ProxyPairModule {
                 &attributes,
                 &[BoxedBytes::empty()],
             );
-
         self.increase_nonce();
     }
 
@@ -474,7 +479,8 @@ pub trait ProxyPairModule {
         token_nonce: Nonce,
     ) {
         let amount = self.temporary_funds(caller, token_id, token_nonce).get();
-        self.direct_transfer_esdt(caller, token_id, token_nonce, &amount);
+        self.send()
+            .transfer_tokens(token_id, token_nonce, &amount, caller);
         self.temporary_funds(caller, token_id, token_nonce).clear();
     }
 
@@ -490,7 +496,11 @@ pub trait ProxyPairModule {
             token_to_send = token_id.clone();
         } else {
             let asset_token_id = self.asset().token_id().get();
-            self.asset().mint_tokens(&asset_token_id, amount);
+            self.send().esdt_local_mint(
+                MINT_TOKENS_GAS_LIMIT,
+                &asset_token_id.as_esdt_identifier(),
+                amount,
+            );
             token_to_send = asset_token_id;
         };
         let result = self.send().direct_esdt_execute(
@@ -508,54 +518,6 @@ pub trait ProxyPairModule {
         match result {
             Result::Ok(()) => Ok(()),
             Result::Err(_) => sc_error!("Failed to transfer to pair"),
-        }
-    }
-
-    fn direct_transfer_esdt(
-        &self,
-        address: &Address,
-        token_id: &TokenIdentifier,
-        token_nonce: Nonce,
-        amount: &BigUint,
-    ) {
-        if token_nonce == 0 {
-            self.direct_transfer_fungible(address, token_id, amount);
-        } else {
-            self.direct_transfer_non_fungible(address, token_id, token_nonce, amount);
-        }
-    }
-
-    fn direct_transfer_fungible(
-        &self,
-        address: &Address,
-        token_id: &TokenIdentifier,
-        amount: &BigUint,
-    ) {
-        if amount > &0 {
-            let _ = self.send().direct_esdt_via_transf_exec(
-                address,
-                token_id.as_esdt_identifier(),
-                amount,
-                &[],
-            );
-        }
-    }
-
-    fn direct_transfer_non_fungible(
-        &self,
-        address: &Address,
-        token_id: &TokenIdentifier,
-        token_nonce: Nonce,
-        amount: &BigUint,
-    ) {
-        if amount > &0 {
-            let _ = self.send().direct_esdt_nft_via_transfer_exec(
-                address,
-                token_id.as_esdt_identifier(),
-                token_nonce,
-                amount,
-                &[],
-            );
         }
     }
 

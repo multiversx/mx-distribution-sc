@@ -17,6 +17,7 @@ const SIMULATE_EXIT_FARM_GAS_PRICE: u64 = 100000000;
 const CLAIM_REWARDS_GAS_PRICE: u64 = 100000000;
 const ENTER_FARM_GAS_PRICE: u64 = 60000000;
 const EXIT_FARM_GAS_PRICE: u64 = 60000000;
+const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
 const ENTER_FARM_FUNC_NAME: &[u8] = b"enterFarm";
 const EXIT_FARM_FUNC_NAME: &[u8] = b"exitFarm";
@@ -95,7 +96,7 @@ pub trait ProxyFarmModule {
 
         let token_nonce = self.call_value().esdt_token_nonce();
         let (amount, token_id) = self.call_value().payment_token_pair();
-        require!(amount != 0, "Paymend amount cannot be zero");
+        require!(amount != 0, "Payment amount cannot be zero");
         require!(
             token_id == self.proxy_pair().token_id().get(),
             "Should only be used with wrapped LP tokens"
@@ -110,6 +111,10 @@ pub trait ProxyFarmModule {
         let farm_token_id = farm_result.token_id;
         let farm_token_nonce = farm_result.token_nonce;
         let farm_token_total_amount = farm_result.amount;
+        require!(
+            farm_token_total_amount > 0,
+            "Farm token amount received should be greater than 0"
+        );
         sc_try!(self.actual_enter_farm(&farm_address, &lp_token_id, &amount));
 
         let attributes = WrappedFarmTokenAttributes {
@@ -132,7 +137,7 @@ pub trait ProxyFarmModule {
 
         let token_nonce = self.call_value().esdt_token_nonce();
         let (amount, token_id) = self.call_value().payment_token_pair();
-        require!(amount != 0, "Paymend amount cannot be zero");
+        require!(amount != 0, "Payment amount cannot be zero");
         require!(
             token_id == self.token_id().get(),
             "Should only be used with wrapped farm tokens"
@@ -149,19 +154,25 @@ pub trait ProxyFarmModule {
         sc_try!(self.actual_exit_farm(&farm_address, &farm_token_id, farm_token_nonce, &amount));
 
         let caller = self.blockchain().get_caller();
-        self.proxy_pair().send_wrapped_lp_token(
+        self.send().transfer_tokens(
             &wrapped_farm_token_attrs.farmed_token_id,
             wrapped_farm_token_attrs.farmed_token_nonce,
             &lp_token_returned.amount,
             &caller,
         );
 
-        self.asset().send_tokens(
+        self.send().transfer_tokens(
             &reward_token_returned.token_id,
+            0,
             &reward_token_returned.amount,
             &caller,
         );
-        self.burn_tokens(&token_id, token_nonce, &amount);
+        self.send().burn_tokens(
+            &token_id,
+            token_nonce,
+            &amount,
+            self.blockchain().get_gas_left(),
+        );
 
         Ok(())
     }
@@ -174,7 +185,7 @@ pub trait ProxyFarmModule {
 
         let token_nonce = self.call_value().esdt_token_nonce();
         let (amount, token_id) = self.call_value().payment_token_pair();
-        require!(amount != 0, "Paymend amount cannot be zero");
+        require!(amount != 0, "Payment amount cannot be zero");
         require!(
             token_id == self.token_id().get(),
             "Should only be used with wrapped farm tokens"
@@ -184,7 +195,8 @@ pub trait ProxyFarmModule {
         let wrapped_farm_token_attrs = sc_try!(self.get_attributes(&token_id, token_nonce));
         let farm_token_id = wrapped_farm_token_attrs.farm_token_id;
         let farm_token_nonce = wrapped_farm_token_attrs.farm_token_nonce;
-        self.burn_tokens(&token_id, token_nonce, &amount);
+        self.send()
+            .burn_tokens(&token_id, token_nonce, &amount, BURN_TOKENS_GAS_LIMIT);
 
         // Simulate an exit farm and get the returned tokens.
         let exit_farm_result =
@@ -201,14 +213,19 @@ pub trait ProxyFarmModule {
         let new_farm_token_id = enter_farm_result.token_id;
         let new_farm_token_nonce = enter_farm_result.token_nonce;
         let new_farm_token_total_amount = enter_farm_result.amount;
+        require!(
+            new_farm_token_total_amount > 0,
+            "Farm token amount received should be greater than 0"
+        );
 
         // Do the actual claiming of rewards.
         sc_try!(self.actual_exit_farm(&farm_address, &farm_token_id, farm_token_nonce, &amount));
 
         // Send the reward to the caller.
         let caller = self.blockchain().get_caller();
-        self.asset().send_tokens(
+        self.send().transfer_tokens(
             &reward_token_returned.token_id,
+            0,
             &reward_token_returned.amount,
             &caller,
         );
@@ -227,17 +244,6 @@ pub trait ProxyFarmModule {
         );
 
         Ok(())
-    }
-
-    fn burn_tokens(&self, token: &TokenIdentifier, nonce: Nonce, amount: &BigUint) {
-        if amount > &0 {
-            self.send().esdt_nft_burn(
-                self.blockchain().get_gas_left(),
-                token.as_esdt_identifier(),
-                nonce,
-                amount,
-            );
-        }
     }
 
     fn get_attributes(
@@ -267,48 +273,29 @@ pub trait ProxyFarmModule {
         address: &Address,
     ) {
         let wrapped_farm_token_id = self.token_id().get();
-        self.create_token(&wrapped_farm_token_id, attributes, amount);
+        self.create_tokens(&wrapped_farm_token_id, attributes, amount);
         let nonce = self.token_nonce().get();
-        self.send_token(&wrapped_farm_token_id, nonce, amount, address);
+        self.send()
+            .transfer_tokens(&wrapped_farm_token_id, nonce, amount, address);
     }
 
-    fn create_token(
+    fn create_tokens(
         &self,
         token_id: &TokenIdentifier,
         attributes: &WrappedFarmTokenAttributes,
         amount: &BigUint,
     ) {
-        if amount > &0 {
-            self.send().esdt_nft_create::<WrappedFarmTokenAttributes>(
-                self.blockchain().get_gas_left(),
-                token_id.as_esdt_identifier(),
-                amount,
-                &BoxedBytes::empty(),
-                &BigUint::zero(),
-                &H256::zero(),
-                &attributes,
-                &[BoxedBytes::empty()],
-            );
-            self.increase_nonce();
-        }
-    }
-
-    fn send_token(
-        &self,
-        wrapped_farm_token_id: &TokenIdentifier,
-        wrapped_farm_token_nonce: Nonce,
-        amount: &BigUint,
-        caller: &Address,
-    ) {
-        if amount > &0 {
-            let _ = self.send().direct_esdt_nft_via_transfer_exec(
-                caller,
-                wrapped_farm_token_id.as_esdt_identifier(),
-                wrapped_farm_token_nonce,
-                amount,
-                &[],
-            );
-        }
+        self.send().esdt_nft_create::<WrappedFarmTokenAttributes>(
+            self.blockchain().get_gas_left(),
+            token_id.as_esdt_identifier(),
+            amount,
+            &BoxedBytes::empty(),
+            &BigUint::zero(),
+            &H256::zero(),
+            &attributes,
+            &[BoxedBytes::empty()],
+        );
+        self.increase_nonce();
     }
 
     fn simulate_enter_farm(

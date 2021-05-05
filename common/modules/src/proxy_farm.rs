@@ -6,7 +6,6 @@ elrond_wasm::derive_imports!();
 
 type Nonce = u64;
 pub use crate::asset::*;
-pub use crate::global_op::*;
 pub use crate::locked_asset::*;
 pub use crate::proxy_pair::*;
 
@@ -64,9 +63,6 @@ pub trait ProxyFarmModule {
     #[module(LockedAssetModuleImpl)]
     fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
 
-    #[module(GlobalOperationModuleImpl)]
-    fn global_operation(&self) -> GlobalOperationModuleImpl<T, BigInt, BigUint>;
-
     #[module(ProxyPairModuleImpl)]
     fn proxy_pair(&self) -> ProxyPairModuleImpl<T, BigInt, BigUint>;
 
@@ -91,7 +87,6 @@ pub trait ProxyFarmModule {
     #[payable("*")]
     #[endpoint(enterFarmProxy)]
     fn enter_farm_proxy(&self, farm_address: &Address) -> SCResult<()> {
-        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_farm(&farm_address));
 
         let token_nonce = self.call_value().esdt_token_nonce();
@@ -132,7 +127,6 @@ pub trait ProxyFarmModule {
     #[payable("*")]
     #[endpoint(exitFarmProxy)]
     fn exit_farm_proxy(&self, farm_address: &Address) -> SCResult<()> {
-        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_farm(&farm_address));
 
         let token_nonce = self.call_value().esdt_token_nonce();
@@ -180,7 +174,6 @@ pub trait ProxyFarmModule {
     #[payable("*")]
     #[endpoint(claimRewardsProxy)]
     fn claim_rewards_proxy(&self, farm_address: Address) -> SCResult<()> {
-        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_farm(&farm_address));
 
         let token_nonce = self.call_value().esdt_token_nonce();

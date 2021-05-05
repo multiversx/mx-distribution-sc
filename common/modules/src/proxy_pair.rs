@@ -9,7 +9,6 @@ type Nonce = u64;
 use elrond_wasm::{contract_call, only_owner, require, sc_error, sc_try};
 
 pub use crate::asset::*;
-pub use crate::global_op::*;
 pub use crate::locked_asset::*;
 use core::cmp::min;
 
@@ -65,9 +64,6 @@ pub trait ProxyPairModule {
     #[module(LockedAssetModuleImpl)]
     fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
 
-    #[module(GlobalOperationModuleImpl)]
-    fn global_operation(&self) -> GlobalOperationModuleImpl<T, BigInt, BigUint>;
-
     #[endpoint(addPairToIntermediate)]
     fn add_pair_to_intermediate(&self, pair_address: Address) -> SCResult<()> {
         only_owner!(self, "Permission denied");
@@ -86,7 +82,6 @@ pub trait ProxyPairModule {
     #[payable("*")]
     #[endpoint(acceptEsdtPaymentProxy)]
     fn accept_esdt_payment_proxy(&self, pair_address: Address) -> SCResult<()> {
-        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
 
         let token_nonce = self.call_value().esdt_token_nonce();
@@ -106,7 +101,6 @@ pub trait ProxyPairModule {
         second_token_id: TokenIdentifier,
         second_token_nonce: Nonce,
     ) -> SCResult<()> {
-        sc_try!(self.global_operation().require_not_ongoing());
         let caller = self.blockchain().get_caller();
         self.send_temporary_funds_back(&caller, &first_token_id, first_token_nonce);
         self.send_temporary_funds_back(&caller, &second_token_id, second_token_nonce);
@@ -124,7 +118,6 @@ pub trait ProxyPairModule {
         second_token_nonce: Nonce,
         second_token_amount_min: BigUint,
     ) -> SCResult<()> {
-        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
 
         let caller = self.blockchain().get_caller();
@@ -260,7 +253,6 @@ pub trait ProxyPairModule {
         first_token_amount_min: BigUint,
         second_token_amount_min: BigUint,
     ) -> SCResult<()> {
-        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
 
         let token_nonce = self.call_value().esdt_token_nonce();

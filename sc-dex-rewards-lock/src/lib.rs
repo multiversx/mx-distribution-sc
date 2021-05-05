@@ -106,7 +106,10 @@ pub trait DexRewardsLock {
 
         self.epoch_rewards_map().remove(&epoch);
 
-        require!(!self.epoch_rewards_map().is_empty(), "Can't remove all epoch rewards");
+        require!(
+            !self.epoch_rewards_map().is_empty(),
+            "Can't remove all epoch rewards"
+        );
 
         Ok(())
     }
@@ -231,7 +234,11 @@ pub trait DexRewardsLock {
                         .set_special_roles(
                             &self.blockchain().get_sc_address(),
                             token_id.as_esdt_identifier(),
-                            &[EsdtLocalRole::NftCreate, EsdtLocalRole::NftBurn],
+                            &[
+                                EsdtLocalRole::NftCreate,
+                                EsdtLocalRole::NftBurn,
+                                EsdtLocalRole::NftAddQuantity,
+                            ],
                         )
                         .async_call(),
                 )

@@ -91,7 +91,6 @@
                         },
                         "str:LOCKED-123456": {
                             "balance": "0",
-                            "lastNonce": "1",
                             "roles": [
                                 "ESDTRoleNFTCreate",
                                 "ESDTRoleNFTBurn",

@@ -14,7 +14,7 @@ use elrond_wasm::{contract_call, only_owner, require, sc_error, sc_try};
 
 const SIMULATE_ENTER_FARM_GAS_PRICE: u64 = 100000000;
 const SIMULATE_EXIT_FARM_GAS_PRICE: u64 = 100000000;
-const SIMULATE_CLAIM_REWARDS_GAS_PRICE: u64 = 100000000;
+const CLAIM_REWARDS_GAS_PRICE: u64 = 100000000;
 const ENTER_FARM_GAS_PRICE: u64 = 60000000;
 const EXIT_FARM_GAS_PRICE: u64 = 60000000;
 
@@ -172,8 +172,6 @@ pub trait ProxyFarmModule {
         sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_is_intermediated_farm(&farm_address));
 
-        let a = 1;
-        let a = 1;
         let token_nonce = self.call_value().esdt_token_nonce();
         let (amount, token_id) = self.call_value().payment_token_pair();
         require!(amount != 0, "Paymend amount cannot be zero");
@@ -232,12 +230,14 @@ pub trait ProxyFarmModule {
     }
 
     fn burn_tokens(&self, token: &TokenIdentifier, nonce: Nonce, amount: &BigUint) {
-        self.send().esdt_nft_burn(
-            self.blockchain().get_gas_left(),
-            token.as_esdt_identifier(),
-            nonce,
-            amount,
-        );
+        if amount > &0 {
+            self.send().esdt_nft_burn(
+                self.blockchain().get_gas_left(),
+                token.as_esdt_identifier(),
+                nonce,
+                amount,
+            );
+        }
     }
 
     fn get_attributes(
@@ -278,18 +278,19 @@ pub trait ProxyFarmModule {
         attributes: &WrappedFarmTokenAttributes,
         amount: &BigUint,
     ) {
-        self.send().esdt_nft_create::<WrappedFarmTokenAttributes>(
-            self.blockchain().get_gas_left(),
-            token_id.as_esdt_identifier(),
-            amount,
-            &BoxedBytes::empty(),
-            &BigUint::zero(),
-            &H256::zero(),
-            &attributes,
-            &[BoxedBytes::empty()],
-        );
-
-        self.increase_nonce();
+        if amount > &0 {
+            self.send().esdt_nft_create::<WrappedFarmTokenAttributes>(
+                self.blockchain().get_gas_left(),
+                token_id.as_esdt_identifier(),
+                amount,
+                &BoxedBytes::empty(),
+                &BigUint::zero(),
+                &H256::zero(),
+                &attributes,
+                &[BoxedBytes::empty()],
+            );
+            self.increase_nonce();
+        }
     }
 
     fn send_token(
@@ -299,13 +300,15 @@ pub trait ProxyFarmModule {
         amount: &BigUint,
         caller: &Address,
     ) {
-        let _ = self.send().direct_esdt_nft_via_transfer_exec(
-            caller,
-            wrapped_farm_token_id.as_esdt_identifier(),
-            wrapped_farm_token_nonce,
-            amount,
-            &[],
-        );
+        if amount > &0 {
+            let _ = self.send().direct_esdt_nft_via_transfer_exec(
+                caller,
+                wrapped_farm_token_id.as_esdt_identifier(),
+                wrapped_farm_token_nonce,
+                amount,
+                &[],
+            );
+        }
     }
 
     fn simulate_enter_farm(
@@ -395,7 +398,7 @@ pub trait ProxyFarmModule {
         farm_token_nonce: Nonce,
         amount: &BigUint,
     ) -> SCResult<()> {
-        let gas_limit = core::cmp::min(self.blockchain().get_gas_left(), CLAIM_REWARDS_FUNC_NAME);
+        let gas_limit = core::cmp::min(self.blockchain().get_gas_left(), CLAIM_REWARDS_GAS_PRICE);
         let result = self.send().direct_esdt_nft_execute(
             farm_address,
             farm_token_id.as_esdt_identifier(),

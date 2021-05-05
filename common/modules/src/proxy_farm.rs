@@ -27,9 +27,6 @@ pub struct ProxyFarmParams {
     pub enter_farm_gas_limit: u64,
     pub exit_farm_gas_limit: u64,
     pub burn_tokens_gas_limit: u64,
-    pub enter_farm_func_name: BoxedBytes,
-    pub exit_farm_func_name: BoxedBytes,
-    pub claim_rewards_func_name: BoxedBytes,
 }
 
 #[derive(TopEncode, TopDecode, PartialEq, TypeAbi)]

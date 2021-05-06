@@ -7,14 +7,16 @@ use distrib_common::*;
 use modules::*;
 
 const PERCENTAGE_TOTAL: u32 = 100;
+const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
-#[elrond_wasm_derive::contract(DexRewardsLockImpl)]
-pub trait DexRewardsLock {
-    #[module(AssetModuleImpl)]
-    fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
 
-    #[module(LockedAssetModuleImpl)]
-    fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
+#[elrond_wasm_derive::contract(LockageRewards)]
+pub trait LockageRewardsImpl {
+    #[module(AssetModule)]
+    fn asset(&self) -> AssetModule<T, BigInt, BigUint>;
+
+    #[module(LockedAssetModule)]
+    fn locked_asset(&self) -> LockedAssetModule<T, BigInt, BigUint>;
 
     /// Epoch refers to duration in epochs, not a specific deadline
     #[init]
@@ -52,7 +54,7 @@ pub trait DexRewardsLock {
         token_ticker: BoxedBytes,
         #[payment] issue_cost: BigUint,
     ) -> SCResult<AsyncCall<BigUint>> {
-        sc_try!(self.require_caller_owner());
+        only_owner!(self, "Permission denied");
         require!(
             self.locked_asset().token_id().is_empty(),
             "NFT already issued"
@@ -74,6 +76,22 @@ pub trait DexRewardsLock {
             )
             .async_call()
             .with_callback(self.callbacks().issue_nft_callback()))
+    }
+
+    #[endpoint(setLocalRoles)]
+    fn set_local_roles(
+        &self,
+        token: TokenIdentifier,
+        address: Address,
+        #[var_args] roles: VarArgs<EsdtLocalRole>,
+    ) -> SCResult<AsyncCall<BigUint>> {
+        only_owner!(self, "Permission denied");
+        require!(token == self.locked_asset().token_id().get(), "Bad token id");
+        require!(!roles.is_empty(), "Empty roles");
+        Ok(ESDTSystemSmartContractProxy::new()
+            .set_special_roles(&address, token.as_esdt_identifier(), &roles.as_slice())
+            .async_call()
+        )
     }
 
     #[endpoint(addEpochReward)]
@@ -142,9 +160,15 @@ pub trait DexRewardsLock {
         );
 
         // burn received MEX tokens
-        self.asset().burn(&self.asset().token_id().get(), &amount);
+        self.send().burn_tokens(&self.asset().token_id().get(), 0, &amount, BURN_TOKENS_GAS_LIMIT);
 
         Ok(())
+    }
+
+    #[payable("*")]
+    #[endpoint(unlockAssets)]
+    fn unlock_assets(&self) -> SCResult<()> {
+        self.locked_asset().unlock_assets()
     }
 
     // views
@@ -197,20 +221,10 @@ pub trait DexRewardsLock {
     fn issue_nft_callback(
         &self,
         #[call_result] result: AsyncCallResult<TokenIdentifier>,
-    ) -> OptionalResult<AsyncCall<BigUint>> {
+    ) {
         match result {
             AsyncCallResult::Ok(token_id) => {
                 self.locked_asset().token_id().set(&token_id);
-
-                OptionalResult::Some(
-                    ESDTSystemSmartContractProxy::new()
-                        .set_special_roles(
-                            &self.blockchain().get_sc_address(),
-                            token_id.as_esdt_identifier(),
-                            &[EsdtLocalRole::NftCreate, EsdtLocalRole::NftBurn],
-                        )
-                        .async_call(),
-                )
             }
             AsyncCallResult::Err(_) => {
                 // return payment to initial caller, which can only be the owner
@@ -221,10 +235,8 @@ pub trait DexRewardsLock {
                     &payment,
                     &[],
                 );
-
-                OptionalResult::None
             }
-        }
+        };
     }
 
     // Storage

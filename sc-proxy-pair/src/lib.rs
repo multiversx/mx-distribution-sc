@@ -1,3 +1,4 @@
+#![no_std]
 #![allow(non_snake_case)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::clippy::comparison_chain)]
@@ -8,7 +9,8 @@ elrond_wasm::derive_imports!();
 type Nonce = u64;
 use elrond_wasm::{contract_call, only_owner, require, sc_error, sc_try};
 
-pub use crate::asset::*;
+use modules::*;
+use distrib_common::*;
 use core::cmp::min;
 
 #[derive(TopEncode, TopDecode, TypeAbi)]
@@ -24,21 +26,6 @@ pub struct ProxyPairParams {
 
 type AddLiquidityResultType<BigUint> =
     MultiResult3<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
-
-#[derive(TopEncode, TopDecode, PartialEq, TypeAbi)]
-pub struct TokenAmountPair<BigUint: BigUintApi> {
-    pub token_id: TokenIdentifier,
-    pub amount: BigUint,
-}
-
-#[derive(TopEncode, TopDecode, TypeAbi)]
-pub struct WrappedLpTokenAttributes<BigUint: BigUintApi> {
-    pub lp_token_id: TokenIdentifier,
-    pub lp_token_total_amount: BigUint,
-    locked_assets_token_id: TokenIdentifier,
-    locked_assets_invested: BigUint,
-    locked_assets_nonce: Nonce,
-}
 
 #[elrond_wasm_derive::callable(PairContractProxy)]
 pub trait PairContract {
@@ -58,10 +45,16 @@ pub trait PairContract {
 const ACCEPT_ESDT_PAYMENT_FUNC_NAME: &[u8] = b"acceptEsdtPayment";
 const REMOVE_LIQUIDITY_FUNC_NAME: &[u8] = b"removeLiquidity";
 
-#[elrond_wasm_derive::module(ProxyPairModuleImpl)]
-pub trait ProxyPairModule {
-    #[module(AssetModuleImpl)]
-    fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
+#[elrond_wasm_derive::contract(ProxyPair)]
+pub trait ProxyPairImpl {
+    #[module(AssetModule)]
+    fn asset(&self) -> AssetModule<T, BigInt, BigUint>;
+
+	#[init]
+	fn init(&self, asset_token_id: TokenIdentifier, proxy_params: ProxyPairParams) {
+        self.asset().token_id().set(&asset_token_id);
+		self.params().set(&proxy_params);
+	}
 
     #[endpoint(setProxyParams)]
     fn set_proxy_params(&self, proxy_params: ProxyPairParams) -> SCResult<()> {
@@ -388,6 +381,76 @@ pub trait ProxyPairModule {
             proxy_params.burn_tokens_gas_limit,
         );
         Ok(())
+    }
+
+    #[payable("EGLD")]
+    #[endpoint(issueNft)]
+    fn issue_nft(
+        &self,
+        token_display_name: BoxedBytes,
+        token_ticker: BoxedBytes,
+        #[payment] issue_cost: BigUint,
+    ) -> SCResult<AsyncCall<BigUint>> {
+        only_owner!(self, "Permission denied");
+        require!(
+            self.token_id().is_empty(),
+            "NFT already issued"
+        );
+
+        Ok(ESDTSystemSmartContractProxy::new()
+            .issue_semi_fungible(
+                issue_cost,
+                &token_display_name,
+                &token_ticker,
+                SemiFungibleTokenProperties {
+                    can_add_special_roles: true,
+                    can_change_owner: false,
+                    can_freeze: false,
+                    can_pause: false,
+                    can_upgrade: true,
+                    can_wipe: false,
+                },
+            )
+            .async_call()
+            .with_callback(self.callbacks().issue_nft_callback()))
+    }
+
+    #[callback]
+    fn issue_nft_callback(
+        &self,
+        #[call_result] result: AsyncCallResult<TokenIdentifier>,
+    ) {
+        match result {
+            AsyncCallResult::Ok(token_id) => {
+                self.token_id().set(&token_id);
+            }
+            AsyncCallResult::Err(_) => {
+                // return payment to initial caller, which can only be the owner
+                let (payment, token_id) = self.call_value().payment_token_pair();
+                self.send().direct(
+                    &self.blockchain().get_owner_address(),
+                    &token_id,
+                    &payment,
+                    &[],
+                );
+            }
+        };
+    }
+
+    #[endpoint(setLocalRoles)]
+    fn set_local_roles(
+        &self,
+        token: TokenIdentifier,
+        address: Address,
+        #[var_args] roles: VarArgs<EsdtLocalRole>,
+    ) -> SCResult<AsyncCall<BigUint>> {
+        only_owner!(self, "Permission denied");
+        require!(token == self.token_id().get(), "Bad token id");
+        require!(!roles.is_empty(), "Empty roles");
+        Ok(ESDTSystemSmartContractProxy::new()
+            .set_special_roles(&address, token.as_esdt_identifier(), &roles.as_slice())
+            .async_call()
+        )
     }
 
     fn actual_remove_liquidity(

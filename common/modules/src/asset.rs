@@ -3,8 +3,8 @@ elrond_wasm::derive_imports!();
 
 const MINT_TOKENS_GAS_LIMIT: u64 = 5000000;
 
-#[elrond_wasm_derive::module(AssetModuleImpl)]
-pub trait AssetModule {
+#[elrond_wasm_derive::module(AssetModule)]
+pub trait AssetModuleImpl {
     fn mint_and_send(&self, address: &Address, amount: &BigUint) {
         if amount > &0 {
             let token_id = self.token_id().get();
@@ -17,7 +17,6 @@ pub trait AssetModule {
         }
     }
 
-    #[view(getDistributedTokenId)]
     #[storage_mapper("distributed_token_id")]
     fn token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 }

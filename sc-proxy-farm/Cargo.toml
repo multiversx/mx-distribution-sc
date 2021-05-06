@@ -1,5 +1,5 @@
 [package]
-name = "sc_distribution_rs"
+name = "sc-proxy-farm"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
@@ -12,8 +12,8 @@ path = "src/lib.rs"
 wasm-output-mode = [ "elrond-wasm-node",]
 
 [dependencies.elrond-wasm]
-path = "../../elrond-wasm-rs/elrond-wasm"
 version = "0.15"
+path = "../../elrond-wasm-rs/elrond-wasm"
 
 [dependencies.elrond-wasm-derive]
 version = "0.15"
@@ -33,4 +33,3 @@ path = "../common/modules"
 [dev-dependencies.elrond-wasm-debug]
 version = "0.15"
 path = "../../elrond-wasm-rs/elrond-wasm-debug"
-

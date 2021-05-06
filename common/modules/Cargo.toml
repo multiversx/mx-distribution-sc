@@ -9,9 +9,11 @@ path = "src/lib.rs"
 
 [dependencies.elrond-wasm]
 version = "0.15"
+path = "../../../elrond-wasm-rs/elrond-wasm"
 
 [dependencies.elrond-wasm-derive]
 version = "0.15"
+path = "../../../elrond-wasm-rs/elrond-wasm-derive"
 
 [dependencies.distrib-common]
 path = "../distrib-common"

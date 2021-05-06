@@ -10,10 +10,10 @@ use elrond_wasm::{require, sc_error, sc_try};
 
 const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
-#[elrond_wasm_derive::module(LockedAssetModuleImpl)]
-pub trait LockedAssetModule {
-    #[module(AssetModuleImpl)]
-    fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
+#[elrond_wasm_derive::module(LockedAssetModule)]
+pub trait LockedAssetModuleImpl {
+    #[module(AssetModule)]
+    fn asset(&self) -> AssetModule<T, BigInt, BigUint>;
 
     fn create_and_send_multiple(
         &self,
@@ -85,8 +85,6 @@ pub trait LockedAssetModule {
         }
     }
 
-    #[payable("*")]
-    #[endpoint(unlockAssets)]
     fn unlock_assets(&self) -> SCResult<()> {
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
@@ -176,7 +174,6 @@ pub trait LockedAssetModule {
         new_nonce
     }
 
-    #[view(getLockedTokenId)]
     #[storage_mapper("locked_token_id")]
     fn token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 

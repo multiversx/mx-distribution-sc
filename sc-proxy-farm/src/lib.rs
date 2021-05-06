@@ -1,3 +1,4 @@
+#![no_std]
 #![allow(non_snake_case)]
 #![allow(clippy::too_many_arguments)]
 
@@ -5,19 +6,9 @@ elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
 type Nonce = u64;
-pub use crate::asset::*;
-pub use crate::locked_asset::*;
-pub use crate::proxy_pair::*;
+use distrib_common::*;
 
 use elrond_wasm::{contract_call, only_owner, require, sc_error, sc_try};
-
-#[derive(TopEncode, TopDecode, TypeAbi)]
-pub struct WrappedFarmTokenAttributes {
-    farm_token_id: TokenIdentifier,
-    farm_token_nonce: Nonce,
-    farmed_token_id: TokenIdentifier,
-    farmed_token_nonce: Nonce,
-}
 
 #[derive(TopEncode, TopDecode, TypeAbi)]
 pub struct ProxyFarmParams {
@@ -57,16 +48,13 @@ const ENTER_FARM_FUNC_NAME: &[u8] = b"enterFarm";
 const EXIT_FARM_FUNC_NAME: &[u8] = b"exitFarm";
 const CLAIM_REWARDS_FUNC_NAME: &[u8] = b"claimRewards";
 
-#[elrond_wasm_derive::module(ProxyFarmModuleImpl)]
-pub trait ProxyFarmModule {
-    #[module(AssetModuleImpl)]
-    fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
-
-    #[module(LockedAssetModuleImpl)]
-    fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
-
-    #[module(ProxyPairModuleImpl)]
-    fn proxy_pair(&self) -> ProxyPairModuleImpl<T, BigInt, BigUint>;
+#[elrond_wasm_derive::contract(ProxyFarm)]
+pub trait ProxyFarmImpl {
+	#[init]
+	fn init(&self, wrapped_lp_token_id: TokenIdentifier, proxy_params: ProxyFarmParams) {
+		self.wrapped_lp_token_id().set(&wrapped_lp_token_id);
+		self.params().set(&proxy_params);
+	}
 
     #[endpoint(setProxyParams)]
     fn set_proxy_params(&self, proxy_params: ProxyFarmParams) -> SCResult<()> {
@@ -101,12 +89,12 @@ pub trait ProxyFarmModule {
         let (amount, token_id) = self.call_value().payment_token_pair();
         require!(amount != 0, "Payment amount cannot be zero");
         require!(
-            token_id == self.proxy_pair().token_id().get(),
+            token_id == self.wrapped_lp_token_id().get(),
             "Should only be used with wrapped LP tokens"
         );
 
         let wrapped_lp_token_attrs =
-            sc_try!(self.proxy_pair().get_attributes(&token_id, token_nonce));
+            sc_try!(self.get_wrapped_lp_token_attributes(&token_id, token_nonce));
 
         let lp_token_id = wrapped_lp_token_attrs.lp_token_id;
 
@@ -277,6 +265,76 @@ pub trait ProxyFarmModule {
         );
 
         Ok(())
+    }
+
+    #[payable("EGLD")]
+    #[endpoint(issueNft)]
+    fn issue_nft(
+        &self,
+        token_display_name: BoxedBytes,
+        token_ticker: BoxedBytes,
+        #[payment] issue_cost: BigUint,
+    ) -> SCResult<AsyncCall<BigUint>> {
+        only_owner!(self, "Permission denied");
+        require!(
+            self.token_id().is_empty(),
+            "NFT already issued"
+        );
+
+        Ok(ESDTSystemSmartContractProxy::new()
+            .issue_semi_fungible(
+                issue_cost,
+                &token_display_name,
+                &token_ticker,
+                SemiFungibleTokenProperties {
+                    can_add_special_roles: true,
+                    can_change_owner: false,
+                    can_freeze: false,
+                    can_pause: false,
+                    can_upgrade: true,
+                    can_wipe: false,
+                },
+            )
+            .async_call()
+            .with_callback(self.callbacks().issue_nft_callback()))
+    }
+
+    #[callback]
+    fn issue_nft_callback(
+        &self,
+        #[call_result] result: AsyncCallResult<TokenIdentifier>,
+    ) {
+        match result {
+            AsyncCallResult::Ok(token_id) => {
+                self.token_id().set(&token_id);
+            }
+            AsyncCallResult::Err(_) => {
+                // return payment to initial caller, which can only be the owner
+                let (payment, token_id) = self.call_value().payment_token_pair();
+                self.send().direct(
+                    &self.blockchain().get_owner_address(),
+                    &token_id,
+                    &payment,
+                    &[],
+                );
+            }
+        };
+    }
+
+    #[endpoint(setLocalRoles)]
+    fn set_local_roles(
+        &self,
+        token: TokenIdentifier,
+        address: Address,
+        #[var_args] roles: VarArgs<EsdtLocalRole>,
+    ) -> SCResult<AsyncCall<BigUint>> {
+        only_owner!(self, "Permission denied");
+        require!(token == self.token_id().get(), "Bad token id");
+        require!(!roles.is_empty(), "Empty roles");
+        Ok(ESDTSystemSmartContractProxy::new()
+            .set_special_roles(&address, token.as_esdt_identifier(), &roles.as_slice())
+            .async_call()
+        )
     }
 
     fn get_attributes(
@@ -472,6 +530,25 @@ pub trait ProxyFarmModule {
         Ok(())
     }
 
+    fn get_wrapped_lp_token_attributes(
+        &self,
+        token_id: &TokenIdentifier,
+        token_nonce: Nonce,
+    ) -> SCResult<WrappedLpTokenAttributes<BigUint>> {
+        let token_info = self.blockchain().get_esdt_token_data(
+            &self.blockchain().get_sc_address(),
+            token_id.as_esdt_identifier(),
+            token_nonce,
+        );
+
+        let attributes = token_info.decode_attributes::<WrappedLpTokenAttributes<BigUint>>();
+        match attributes {
+            Result::Ok(decoded_obj) => Ok(decoded_obj),
+            Result::Err(_) => {
+                return sc_error!("Decoding error");
+            }
+        }
+    }
     #[view(getIntermediatedFarms)]
     #[storage_mapper("intermediated_farms")]
     fn intermediated_farms(&self) -> SetMapper<Self::Storage, Address>;
@@ -479,6 +556,10 @@ pub trait ProxyFarmModule {
     #[view(getWrappedFarmTokenId)]
     #[storage_mapper("wrapped_farm_token_id")]
     fn token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
+
+    #[view(getWrappedLpTokenId)]
+    #[storage_mapper("wrapped_lp_token_id")]
+    fn wrapped_lp_token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 
     #[storage_mapper("wrapped_farm_token_nonce")]
     fn token_nonce(&self) -> SingleValueMapper<Self::Storage, Nonce>;

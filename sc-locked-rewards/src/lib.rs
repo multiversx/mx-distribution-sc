@@ -10,8 +10,8 @@ const PERCENTAGE_TOTAL: u32 = 100;
 const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
 
-#[elrond_wasm_derive::contract(LockageRewards)]
-pub trait LockageRewardsImpl {
+#[elrond_wasm_derive::contract(LockedRewards)]
+pub trait LockedRewardsImpl {
     #[module(AssetModule)]
     fn asset(&self) -> AssetModule<T, BigInt, BigUint>;
 

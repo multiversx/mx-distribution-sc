@@ -1,5 +1,5 @@
 [package]
-name = "sc-lockage-rewards"
+name = "sc-locked-rewards"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"

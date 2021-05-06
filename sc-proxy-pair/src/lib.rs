@@ -127,9 +127,11 @@ pub trait ProxyPairImpl {
         pair_address: Address,
         first_token_id: TokenIdentifier,
         first_token_nonce: Nonce,
+        first_token_amount_desired: BigUint,
         first_token_amount_min: BigUint,
         second_token_id: TokenIdentifier,
         second_token_nonce: Nonce,
+        second_token_amount_desired: BigUint,
         second_token_amount_min: BigUint,
     ) -> SCResult<()> {
         sc_try!(self.require_is_intermediated_pair(&pair_address));
@@ -143,35 +145,45 @@ pub trait ProxyPairImpl {
                 || (first_token_nonce != 0 && second_token_nonce == 0),
             "This endpoint accepts one Fungible and one SemiFungible"
         );
+        require!(
+            first_token_amount_desired > 0 && second_token_amount_desired > 0,
+            "Cannot add zero amount"
+        );
         let locked_asset_token_id = if self.accepted_locked_assets().contains(&first_token_id) {
             first_token_id.clone()
         } else if self.accepted_locked_assets().contains(&second_token_id) {
             second_token_id.clone()
         } else {
-            return sc_error!("One token should be an accepted locked asset token")
+            return sc_error!("One token should be an accepted locked asset token");
         };
-        let first_token_amount = self
+        let first_token_amount_temporary = self
             .temporary_funds(&caller, &first_token_id, first_token_nonce)
             .get();
-        require!(first_token_amount > 0, "First token amount is zero");
-        let second_token_amount = self
+        require!(
+            first_token_amount_temporary >= first_token_amount_desired,
+            "Not enough temporary funds"
+        );
+        let second_token_amount_temporary = self
             .temporary_funds(&caller, &second_token_id, second_token_nonce)
             .get();
-        require!(second_token_amount > 0, "Second token amount is zero");
+        require!(
+            second_token_amount_temporary >= second_token_amount_desired,
+            "Not enough temporary funds"
+        );
 
         // Actual 2x acceptEsdtPayment
         sc_try!(self.forward_to_pair(
             &pair_address,
             &first_token_id,
             first_token_nonce,
-            &first_token_amount,
+            &first_token_amount_desired,
             &proxy_params,
         ));
         sc_try!(self.forward_to_pair(
             &pair_address,
             &second_token_id,
             second_token_nonce,
-            &second_token_amount,
+            &second_token_amount_desired,
             &proxy_params,
         ));
 
@@ -182,8 +194,8 @@ pub trait ProxyPairImpl {
         );
         let result = contract_call!(self, pair_address, PairContractProxy)
             .addLiquidity(
-                first_token_amount.clone(),
-                second_token_amount.clone(),
+                first_token_amount_desired.clone(),
+                second_token_amount_desired.clone(),
                 first_token_amount_min,
                 second_token_amount_min,
             )
@@ -209,7 +221,7 @@ pub trait ProxyPairImpl {
         let asset_token_id = self.asset().token_id().get();
         if first_token_used.token_id == asset_token_id {
             consumed_locked_tokens = first_token_used.amount;
-            let unused_minted_assets = first_token_amount - consumed_locked_tokens.clone();
+            let unused_minted_assets = first_token_amount_desired - consumed_locked_tokens.clone();
             self.send().burn_tokens(
                 &asset_token_id,
                 0,
@@ -232,7 +244,7 @@ pub trait ProxyPairImpl {
             );
         } else if second_token_used.token_id == asset_token_id {
             consumed_locked_tokens = second_token_used.amount;
-            let unused_minted_assets = second_token_amount - consumed_locked_tokens.clone();
+            let unused_minted_assets = second_token_amount_desired - consumed_locked_tokens.clone();
             self.send().burn_tokens(
                 &asset_token_id,
                 0,
@@ -265,6 +277,8 @@ pub trait ProxyPairImpl {
             locked_asset_token_nonce,
             &caller,
         );
+        self.send_temporary_funds_back(&caller, &first_token_id, first_token_nonce);
+        self.send_temporary_funds_back(&caller, &second_token_id, second_token_nonce);
 
         Ok(())
     }

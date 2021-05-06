@@ -1,6 +1,4 @@
-#![no_std]
 #![allow(non_snake_case)]
-#![allow(clippy::too_many_arguments)]
 #![allow(clippy::clippy::comparison_chain)]
 
 elrond_wasm::imports!();
@@ -9,11 +7,10 @@ elrond_wasm::derive_imports!();
 type Nonce = u64;
 use elrond_wasm::{contract_call, only_owner, require, sc_error, sc_try};
 
-use modules::*;
-use distrib_common::*;
 use core::cmp::min;
+use distrib_common::*;
 
-#[derive(TopEncode, TopDecode, TypeAbi)]
+#[derive(TopEncode, TopDecode, PartialEq, Clone, Copy, TypeAbi)]
 pub struct ProxyPairParams {
     pub add_liquidity_gas_limit: u64,
     pub accept_esdt_payment_gas_limit: u64,
@@ -45,18 +42,14 @@ pub trait PairContract {
 const ACCEPT_ESDT_PAYMENT_FUNC_NAME: &[u8] = b"acceptEsdtPayment";
 const REMOVE_LIQUIDITY_FUNC_NAME: &[u8] = b"removeLiquidity";
 
-#[elrond_wasm_derive::contract(ProxyPair)]
-pub trait ProxyPairImpl {
-    #[module(AssetModule)]
-    fn asset(&self) -> AssetModule<T, BigInt, BigUint>;
+#[elrond_wasm_derive::module(ProxyPairModule)]
+pub trait ProxyPairModuleImpl {
+    fn init(&self, asset_token_id: TokenIdentifier, proxy_params: ProxyPairParams) {
+        self.distributed_token_id().set(&asset_token_id);
+        self.params().set(&proxy_params);
+    }
 
-	#[init]
-	fn init(&self, asset_token_id: TokenIdentifier, proxy_params: ProxyPairParams) {
-        self.asset().token_id().set(&asset_token_id);
-		self.params().set(&proxy_params);
-	}
-
-    #[endpoint(setProxyParams)]
+    #[endpoint(setProxyPairParams)]
     fn set_proxy_params(&self, proxy_params: ProxyPairParams) -> SCResult<()> {
         sc_try!(self.require_permissions());
         self.params().set(&proxy_params);
@@ -136,6 +129,7 @@ pub trait ProxyPairImpl {
     ) -> SCResult<()> {
         sc_try!(self.require_is_intermediated_pair(&pair_address));
         sc_try!(self.require_params_not_empty());
+        sc_try!(self.require_token_id_not_empty());
         let proxy_params = self.params().get();
 
         let caller = self.blockchain().get_caller();
@@ -161,14 +155,14 @@ pub trait ProxyPairImpl {
             .get();
         require!(
             first_token_amount_temporary >= first_token_amount_desired,
-            "Not enough temporary funds"
+            "Not enough first temporary funds"
         );
         let second_token_amount_temporary = self
             .temporary_funds(&caller, &second_token_id, second_token_nonce)
             .get();
         require!(
             second_token_amount_temporary >= second_token_amount_desired,
-            "Not enough temporary funds"
+            "Not enough second temporary funds"
         );
 
         // Actual 2x acceptEsdtPayment
@@ -218,7 +212,7 @@ pub trait ProxyPairImpl {
         //Recalculate temporary funds and burn unused
         let locked_asset_token_nonce: Nonce;
         let consumed_locked_tokens: BigUint;
-        let asset_token_id = self.asset().token_id().get();
+        let asset_token_id = self.distributed_token_id().get();
         if first_token_used.token_id == asset_token_id {
             consumed_locked_tokens = first_token_used.amount;
             let unused_minted_assets = first_token_amount_desired - consumed_locked_tokens.clone();
@@ -269,16 +263,17 @@ pub trait ProxyPairImpl {
             return sc_error!("Add liquidity did not return asset token id");
         }
 
-        self.create_and_send_wrapped_lp_token(
+        // self.send_temporary_funds_back(&caller, &first_token_id, first_token_nonce);
+        // self.send_temporary_funds_back(&caller, &second_token_id, second_token_nonce);
+        self.create_and_send(
             &lp_received.token_id,
             &lp_received.amount,
             &locked_asset_token_id,
             &consumed_locked_tokens,
             locked_asset_token_nonce,
             &caller,
+            &proxy_params,
         );
-        self.send_temporary_funds_back(&caller, &first_token_id, first_token_nonce);
-        self.send_temporary_funds_back(&caller, &second_token_id, second_token_nonce);
 
         Ok(())
     }
@@ -293,6 +288,7 @@ pub trait ProxyPairImpl {
     ) -> SCResult<()> {
         sc_try!(self.require_is_intermediated_pair(&pair_address));
         sc_try!(self.require_params_not_empty());
+        sc_try!(self.require_token_id_not_empty());
         let proxy_params = self.params().get();
 
         let token_nonce = self.call_value().esdt_token_nonce();
@@ -309,7 +305,7 @@ pub trait ProxyPairImpl {
         require!(lp_token_id == attributes.lp_token_id, "Bad input address");
 
         let locked_asset_token_id = attributes.locked_assets_token_id;
-        let asset_token_id = self.asset().token_id().get();
+        let asset_token_id = self.distributed_token_id().get();
         let tokens_for_position =
             self.ask_for_tokens_for_position(&pair_address, &amount, &proxy_params);
         sc_try!(self.actual_remove_liquidity(
@@ -397,76 +393,6 @@ pub trait ProxyPairImpl {
         Ok(())
     }
 
-    #[payable("EGLD")]
-    #[endpoint(issueNft)]
-    fn issue_nft(
-        &self,
-        token_display_name: BoxedBytes,
-        token_ticker: BoxedBytes,
-        #[payment] issue_cost: BigUint,
-    ) -> SCResult<AsyncCall<BigUint>> {
-        only_owner!(self, "Permission denied");
-        require!(
-            self.token_id().is_empty(),
-            "NFT already issued"
-        );
-
-        Ok(ESDTSystemSmartContractProxy::new()
-            .issue_semi_fungible(
-                issue_cost,
-                &token_display_name,
-                &token_ticker,
-                SemiFungibleTokenProperties {
-                    can_add_special_roles: true,
-                    can_change_owner: false,
-                    can_freeze: false,
-                    can_pause: false,
-                    can_upgrade: true,
-                    can_wipe: false,
-                },
-            )
-            .async_call()
-            .with_callback(self.callbacks().issue_nft_callback()))
-    }
-
-    #[callback]
-    fn issue_nft_callback(
-        &self,
-        #[call_result] result: AsyncCallResult<TokenIdentifier>,
-    ) {
-        match result {
-            AsyncCallResult::Ok(token_id) => {
-                self.token_id().set(&token_id);
-            }
-            AsyncCallResult::Err(_) => {
-                // return payment to initial caller, which can only be the owner
-                let (payment, token_id) = self.call_value().payment_token_pair();
-                self.send().direct(
-                    &self.blockchain().get_owner_address(),
-                    &token_id,
-                    &payment,
-                    &[],
-                );
-            }
-        };
-    }
-
-    #[endpoint(setLocalRoles)]
-    fn set_local_roles(
-        &self,
-        token: TokenIdentifier,
-        address: Address,
-        #[var_args] roles: VarArgs<EsdtLocalRole>,
-    ) -> SCResult<AsyncCall<BigUint>> {
-        only_owner!(self, "Permission denied");
-        require!(token == self.token_id().get(), "Bad token id");
-        require!(!roles.is_empty(), "Empty roles");
-        Ok(ESDTSystemSmartContractProxy::new()
-            .set_special_roles(&address, token.as_esdt_identifier(), &roles.as_slice())
-            .async_call()
-        )
-    }
-
     fn actual_remove_liquidity(
         &self,
         pair_address: &Address,
@@ -547,7 +473,7 @@ pub trait ProxyPairImpl {
         }
     }
 
-    fn create_and_send_wrapped_lp_token(
+    fn create_and_send(
         &self,
         lp_token_id: &TokenIdentifier,
         lp_token_amount: &BigUint,
@@ -555,22 +481,23 @@ pub trait ProxyPairImpl {
         locked_tokens_consumed: &BigUint,
         locked_tokens_nonce: Nonce,
         caller: &Address,
+        proxy_params: &ProxyPairParams,
     ) {
         let wrapped_lp_token_id = self.token_id().get();
-        self.create_wrapped_lp_token(
+        let nonce = self.create_tokens(
             &wrapped_lp_token_id,
             lp_token_id,
             lp_token_amount,
             locked_token_id,
             locked_tokens_consumed,
             locked_tokens_nonce,
+            proxy_params,
         );
-        let nonce = self.token_nonce().get();
         self.send()
-            .transfer_tokens(&wrapped_lp_token_id, nonce, lp_token_amount, caller);
+            .transfer_tokens(&wrapped_lp_token_id, nonce, &lp_token_amount, caller);
     }
 
-    fn create_wrapped_lp_token(
+    fn create_tokens(
         &self,
         wrapped_lp_token_id: &TokenIdentifier,
         lp_token_id: &TokenIdentifier,
@@ -578,7 +505,8 @@ pub trait ProxyPairImpl {
         locked_token_id: &TokenIdentifier,
         locked_tokens_consumed: &BigUint,
         locked_tokens_nonce: Nonce,
-    ) {
+        proxy_params: &ProxyPairParams,
+    ) -> Nonce {
         let attributes = WrappedLpTokenAttributes::<BigUint> {
             lp_token_id: lp_token_id.clone(),
             lp_token_total_amount: lp_token_amount.clone(),
@@ -586,9 +514,10 @@ pub trait ProxyPairImpl {
             locked_assets_invested: locked_tokens_consumed.clone(),
             locked_assets_nonce: locked_tokens_nonce,
         };
+        let gas_limit = core::cmp::min(self.blockchain().get_gas_left(), proxy_params.mint_tokens_gas_limit);
         self.send()
             .esdt_nft_create::<WrappedLpTokenAttributes<BigUint>>(
-                self.blockchain().get_gas_left(),
+                gas_limit,
                 wrapped_lp_token_id.as_esdt_identifier(),
                 lp_token_amount,
                 &BoxedBytes::empty(),
@@ -597,7 +526,7 @@ pub trait ProxyPairImpl {
                 &attributes,
                 &[BoxedBytes::empty()],
             );
-        self.increase_nonce();
+        self.increase_nonce()
     }
 
     fn send_temporary_funds_back(
@@ -624,7 +553,7 @@ pub trait ProxyPairImpl {
         if token_nonce == 0 {
             token_to_send = token_id.clone();
         } else {
-            let asset_token_id = self.asset().token_id().get();
+            let asset_token_id = self.distributed_token_id().get();
             self.send().esdt_local_mint(
                 min(
                     self.blockchain().get_gas_left(),
@@ -715,6 +644,11 @@ pub trait ProxyPairImpl {
         Ok(())
     }
 
+    fn require_token_id_not_empty(&self) -> SCResult<()> {
+        require!(!self.token_id().is_empty(), "Empty token id");
+        Ok(())
+    }
+
     #[view(getTemporaryFunds)]
     #[storage_mapper("funds")]
     fn temporary_funds(
@@ -736,9 +670,12 @@ pub trait ProxyPairImpl {
     #[storage_mapper("wrapped_lp_token_id")]
     fn token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 
+    #[storage_mapper("distributed_token_id")]
+    fn distributed_token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
+
     #[storage_mapper("wrapped_tp_token_nonce")]
     fn token_nonce(&self) -> SingleValueMapper<Self::Storage, Nonce>;
 
-    #[storage_mapper("proxy_farm_params")]
+    #[storage_mapper("proxy_pair_params")]
     fn params(&self) -> SingleValueMapper<Self::Storage, ProxyPairParams>;
 }

@@ -1,5 +1,5 @@
 [package]
-name = "sc-proxy-farm"
+name = "sc-proxy-dex"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"

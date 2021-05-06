@@ -1,0 +1,20 @@
+[package]
+name = "sc_distribution_rs-abi"
+
+version = "0.0.0"
+authors = [ "you",]
+edition = "2018"
+publish = false
+
+[dependencies.sc_distribution_rs]
+path = ".."
+
+[dependencies.elrond-wasm]
+version = "0.15"
+path = "../../../elrond-wasm-rs/elrond-wasm"
+
+
+[dependencies.elrond-wasm-debug]
+version = "0.15"
+path = "../../../elrond-wasm-rs/elrond-wasm-debug"
+

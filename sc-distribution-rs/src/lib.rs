@@ -9,8 +9,8 @@ use modules::*;
 const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
 
-#[elrond_wasm_derive::contract(EsdtDistributionImpl)]
-pub trait EsdtDistribution {
+#[elrond_wasm_derive::contract(EsdtDistribution)]
+pub trait EsdtDistributionImpl {
     #[module(AssetModule)]
     fn asset(&self) -> AssetModule<T, BigInt, BigUint>;
 

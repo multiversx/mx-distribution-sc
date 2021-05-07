@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+#![allow(clippy::clippy::too_many_arguments)]
 #![allow(clippy::clippy::comparison_chain)]
 
 elrond_wasm::imports!();
@@ -263,8 +264,8 @@ pub trait ProxyPairModuleImpl {
             return sc_error!("Add liquidity did not return asset token id");
         }
 
-        // self.send_temporary_funds_back(&caller, &first_token_id, first_token_nonce);
-        // self.send_temporary_funds_back(&caller, &second_token_id, second_token_nonce);
+        self.send_temporary_funds_back(&caller, &first_token_id, first_token_nonce);
+        self.send_temporary_funds_back(&caller, &second_token_id, second_token_nonce);
         self.create_and_send(
             &lp_received.token_id,
             &lp_received.amount,

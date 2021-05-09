@@ -11,6 +11,8 @@ use elrond_wasm::{contract_call, only_owner, require, sc_error, sc_try};
 use core::cmp::min;
 use distrib_common::*;
 
+pub use crate::proxy_common::*;
+
 #[derive(TopEncode, TopDecode, PartialEq, Clone, Copy, TypeAbi)]
 pub struct ProxyPairParams {
     pub add_liquidity_gas_limit: u64,
@@ -45,8 +47,10 @@ const REMOVE_LIQUIDITY_FUNC_NAME: &[u8] = b"removeLiquidity";
 
 #[elrond_wasm_derive::module(ProxyPairModule)]
 pub trait ProxyPairModuleImpl {
-    fn init(&self, asset_token_id: TokenIdentifier, proxy_params: ProxyPairParams) {
-        self.distributed_token_id().set(&asset_token_id);
+    #[module(ProxyCommonModule)]
+    fn common(&self) -> ProxyCommonModule<T, BigInt, BigUint>;
+
+    fn init(&self, proxy_params: ProxyPairParams) {
         self.params().set(&proxy_params);
     }
 
@@ -69,21 +73,6 @@ pub trait ProxyPairModuleImpl {
         sc_try!(self.require_permissions());
         sc_try!(self.require_is_intermediated_pair(&pair_address));
         self.intermediated_pairs().remove(&pair_address);
-        Ok(())
-    }
-
-    #[endpoint(addAcceptedLockedAssetTokenId)]
-    fn add_accepted_locked_asset_token_id(&self, token_id: TokenIdentifier) -> SCResult<()> {
-        sc_try!(self.require_permissions());
-        self.accepted_locked_assets().insert(token_id);
-        Ok(())
-    }
-
-    #[endpoint(removeAcceptedLockedAssetTokenId)]
-    fn remove_accepted_locked_asset_token_id(&self, token_id: TokenIdentifier) -> SCResult<()> {
-        sc_try!(self.require_permissions());
-        sc_try!(self.require_is_accepted_locked_asset(&token_id));
-        self.accepted_locked_assets().remove(&token_id);
         Ok(())
     }
 
@@ -144,9 +133,17 @@ pub trait ProxyPairModuleImpl {
             first_token_amount_desired > 0 && second_token_amount_desired > 0,
             "Cannot add zero amount"
         );
-        let locked_asset_token_id = if self.accepted_locked_assets().contains(&first_token_id) {
+        let locked_asset_token_id = if self
+            .common()
+            .accepted_locked_assets()
+            .contains(&first_token_id)
+        {
             first_token_id.clone()
-        } else if self.accepted_locked_assets().contains(&second_token_id) {
+        } else if self
+            .common()
+            .accepted_locked_assets()
+            .contains(&second_token_id)
+        {
             second_token_id.clone()
         } else {
             return sc_error!("One token should be an accepted locked asset token");
@@ -213,7 +210,7 @@ pub trait ProxyPairModuleImpl {
         //Recalculate temporary funds and burn unused
         let locked_asset_token_nonce: Nonce;
         let consumed_locked_tokens: BigUint;
-        let asset_token_id = self.distributed_token_id().get();
+        let asset_token_id = self.common().asset_token_id().get();
         if first_token_used.token_id == asset_token_id {
             consumed_locked_tokens = first_token_used.amount;
             let unused_minted_assets = first_token_amount_desired - consumed_locked_tokens.clone();
@@ -306,7 +303,7 @@ pub trait ProxyPairModuleImpl {
         require!(lp_token_id == attributes.lp_token_id, "Bad input address");
 
         let locked_asset_token_id = attributes.locked_assets_token_id;
-        let asset_token_id = self.distributed_token_id().get();
+        let asset_token_id = self.common().asset_token_id().get();
         let tokens_for_position =
             self.ask_for_tokens_for_position(&pair_address, &amount, &proxy_params);
         sc_try!(self.actual_remove_liquidity(
@@ -515,7 +512,10 @@ pub trait ProxyPairModuleImpl {
             locked_assets_invested: locked_tokens_consumed.clone(),
             locked_assets_nonce: locked_tokens_nonce,
         };
-        let gas_limit = core::cmp::min(self.blockchain().get_gas_left(), proxy_params.mint_tokens_gas_limit);
+        let gas_limit = core::cmp::min(
+            self.blockchain().get_gas_left(),
+            proxy_params.mint_tokens_gas_limit,
+        );
         self.send()
             .esdt_nft_create::<WrappedLpTokenAttributes<BigUint>>(
                 gas_limit,
@@ -554,7 +554,7 @@ pub trait ProxyPairModuleImpl {
         if token_nonce == 0 {
             token_to_send = token_id.clone();
         } else {
-            let asset_token_id = self.distributed_token_id().get();
+            let asset_token_id = self.common().asset_token_id().get();
             self.send().esdt_local_mint(
                 min(
                     self.blockchain().get_gas_left(),
@@ -627,14 +627,6 @@ pub trait ProxyPairModuleImpl {
         Ok(())
     }
 
-    fn require_is_accepted_locked_asset(&self, token_id: &TokenIdentifier) -> SCResult<()> {
-        require!(
-            self.accepted_locked_assets().contains(token_id),
-            "Not an accepted locked asset"
-        );
-        Ok(())
-    }
-
     fn require_permissions(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
         Ok(())
@@ -663,16 +655,9 @@ pub trait ProxyPairModuleImpl {
     #[storage_mapper("intermediated_pairs")]
     fn intermediated_pairs(&self) -> SetMapper<Self::Storage, Address>;
 
-    #[view(getAcceptedLockedAssetsTokenIds)]
-    #[storage_mapper("accepted_locked_assets")]
-    fn accepted_locked_assets(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
-
     #[view(getWrappedLpTokenId)]
     #[storage_mapper("wrapped_lp_token_id")]
     fn token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
-
-    #[storage_mapper("distributed_token_id")]
-    fn distributed_token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 
     #[storage_mapper("wrapped_tp_token_nonce")]
     fn token_nonce(&self) -> SingleValueMapper<Self::Storage, Nonce>;

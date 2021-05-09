@@ -3,9 +3,11 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
+pub mod proxy_common;
 pub mod proxy_farm;
 pub mod proxy_pair;
 
+pub use crate::proxy_common::*;
 pub use crate::proxy_farm::*;
 pub use crate::proxy_pair::*;
 
@@ -23,6 +25,9 @@ pub trait ProxyDexImpl {
     #[module(ProxyFarmModule)]
     fn proxy_farm(&self) -> ProxyFarmModule<T, BigInt, BigUint>;
 
+    #[module(ProxyCommonModule)]
+    fn common(&self) -> ProxyCommonModule<T, BigInt, BigUint>;
+
     #[init]
     fn init(
         &self,
@@ -30,7 +35,8 @@ pub trait ProxyDexImpl {
         proxy_pair_params: ProxyPairParams,
         proxy_farm_params: ProxyFarmParams,
     ) {
-        self.proxy_pair().init(asset_token_id, proxy_pair_params);
+        self.common().asset_token_id().set(&asset_token_id);
+        self.proxy_pair().init(proxy_pair_params);
         self.proxy_farm().init(proxy_farm_params);
     }
 

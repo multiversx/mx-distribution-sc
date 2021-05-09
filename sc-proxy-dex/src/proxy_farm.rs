@@ -5,8 +5,10 @@ elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
 type Nonce = u64;
+use core::cmp::min;
 use distrib_common::*;
 
+pub use crate::proxy_common::*;
 pub use crate::proxy_pair::*;
 
 use elrond_wasm::{contract_call, only_owner, require, sc_error, sc_try};
@@ -19,6 +21,7 @@ pub struct ProxyFarmParams {
     pub enter_farm_gas_limit: u64,
     pub exit_farm_gas_limit: u64,
     pub burn_tokens_gas_limit: u64,
+    pub mint_tokens_gas_limit: u64,
 }
 
 #[derive(TopEncode, TopDecode, PartialEq, TypeAbi)]
@@ -53,6 +56,9 @@ const CLAIM_REWARDS_FUNC_NAME: &[u8] = b"claimRewards";
 pub trait ProxyFarmModuleImpl {
     #[module(ProxyPairModule)]
     fn proxy_pair(&self) -> ProxyPairModule<T, BigInt, BigUint>;
+
+    #[module(ProxyCommonModule)]
+    fn common(&self) -> ProxyCommonModule<T, BigInt, BigUint>;
 
     fn init(&self, proxy_params: ProxyFarmParams) {
         self.params().set(&proxy_params);
@@ -92,18 +98,29 @@ pub trait ProxyFarmModuleImpl {
         let token_nonce = self.call_value().esdt_token_nonce();
         let (amount, token_id) = self.call_value().payment_token_pair();
         require!(amount != 0, "Payment amount cannot be zero");
-        require!(
-            token_id == self.proxy_pair().token_id().get(),
-            "Should only be used with wrapped LP tokens"
-        );
 
-        let wrapped_lp_token_attrs =
-            sc_try!(self.proxy_pair().get_attributes(&token_id, token_nonce));
-
-        let lp_token_id = wrapped_lp_token_attrs.lp_token_id;
+        let to_farm_token_id: TokenIdentifier;
+        if token_id == self.proxy_pair().token_id().get() {
+            let wrapped_lp_token_attrs =
+                sc_try!(self.proxy_pair().get_attributes(&token_id, token_nonce));
+            to_farm_token_id = wrapped_lp_token_attrs.lp_token_id;
+        } else if self.common().accepted_locked_assets().contains(&token_id) {
+            let asset_token_id = self.common().asset_token_id().get();
+            self.send().esdt_local_mint(
+                min(
+                    self.blockchain().get_gas_left(),
+                    proxy_params.mint_tokens_gas_limit,
+                ),
+                &asset_token_id.as_esdt_identifier(),
+                &amount,
+            );
+            to_farm_token_id = asset_token_id;
+        } else {
+            return sc_error!("Unknown input Token");
+        }
 
         let farm_result =
-            self.simulate_enter_farm(&farm_address, &lp_token_id, &amount, &proxy_params);
+            self.simulate_enter_farm(&farm_address, &to_farm_token_id, &amount, &proxy_params);
         let farm_token_id = farm_result.token_id;
         let farm_token_nonce = farm_result.token_nonce;
         let farm_token_total_amount = farm_result.amount;
@@ -111,7 +128,7 @@ pub trait ProxyFarmModuleImpl {
             farm_token_total_amount > 0,
             "Farm token amount received should be greater than 0"
         );
-        sc_try!(self.actual_enter_farm(&farm_address, &lp_token_id, &amount, &proxy_params));
+        sc_try!(self.actual_enter_farm(&farm_address, &to_farm_token_id, &amount, &proxy_params));
 
         let attributes = WrappedFarmTokenAttributes {
             farm_token_id,
@@ -152,7 +169,7 @@ pub trait ProxyFarmModuleImpl {
             &amount,
             &proxy_params,
         );
-        let lp_token_returned = farm_result.0;
+        let farmed_token_returned = farm_result.0;
         let reward_token_returned = farm_result.1;
         sc_try!(self.actual_exit_farm(
             &farm_address,
@@ -166,7 +183,7 @@ pub trait ProxyFarmModuleImpl {
         self.send().transfer_tokens(
             &wrapped_farm_token_attrs.farmed_token_id,
             wrapped_farm_token_attrs.farmed_token_nonce,
-            &lp_token_returned.amount,
+            &farmed_token_returned.amount,
             &caller,
         );
 
@@ -180,8 +197,22 @@ pub trait ProxyFarmModuleImpl {
             &token_id,
             token_nonce,
             &amount,
-            self.blockchain().get_gas_left(),
+            min(
+                self.blockchain().get_gas_left(),
+                proxy_params.burn_tokens_gas_limit,
+            ),
         );
+        if farmed_token_returned.token_id == self.common().asset_token_id().get() {
+            self.send().burn_tokens(
+                &farmed_token_returned.token_id,
+                0,
+                &farmed_token_returned.amount,
+                min(
+                    self.blockchain().get_gas_left(),
+                    proxy_params.burn_tokens_gas_limit,
+                ),
+            );
+        }
 
         Ok(())
     }
@@ -240,7 +271,7 @@ pub trait ProxyFarmModuleImpl {
         );
 
         // Do the actual claiming of rewards.
-        sc_try!(self.actual_exit_farm(
+        sc_try!(self.actual_claim_rewards(
             &farm_address,
             &farm_token_id,
             farm_token_nonce,

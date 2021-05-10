@@ -3,13 +3,12 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-pub mod proxy_common;
-pub mod proxy_farm;
-pub mod proxy_pair;
+mod proxy_common;
+mod proxy_farm;
+mod proxy_pair;
 
-pub use crate::proxy_common::*;
-pub use crate::proxy_farm::*;
-pub use crate::proxy_pair::*;
+use crate::proxy_farm::*;
+use crate::proxy_pair::*;
 
 #[derive(TopEncode, TopDecode, TypeAbi)]
 pub enum IssueRequestType {
@@ -17,17 +16,10 @@ pub enum IssueRequestType {
     ProxyPair,
 }
 
-#[elrond_wasm_derive::contract(ProxyDex)]
-pub trait ProxyDexImpl {
-    #[module(ProxyPairModule)]
-    fn proxy_pair(&self) -> ProxyPairModule<T, BigInt, BigUint>;
-
-    #[module(ProxyFarmModule)]
-    fn proxy_farm(&self) -> ProxyFarmModule<T, BigInt, BigUint>;
-
-    #[module(ProxyCommonModule)]
-    fn common(&self) -> ProxyCommonModule<T, BigInt, BigUint>;
-
+#[elrond_wasm_derive::contract]
+pub trait ProxyDexImpl:
+    proxy_common::ProxyCommonModule + proxy_pair::ProxyPairModule + proxy_farm::ProxyFarmModule
+{
     #[init]
     fn init(
         &self,
@@ -35,9 +27,9 @@ pub trait ProxyDexImpl {
         proxy_pair_params: ProxyPairParams,
         proxy_farm_params: ProxyFarmParams,
     ) {
-        self.common().asset_token_id().set(&asset_token_id);
-        self.proxy_pair().init(proxy_pair_params);
-        self.proxy_farm().init(proxy_farm_params);
+        self.asset_token_id().set(&asset_token_id);
+        self.init_proxy_pair(proxy_pair_params);
+        self.init_proxy_farm(proxy_farm_params);
     }
 
     #[payable("EGLD")]
@@ -46,13 +38,10 @@ pub trait ProxyDexImpl {
         &self,
         token_display_name: BoxedBytes,
         token_ticker: BoxedBytes,
-        #[payment] issue_cost: BigUint,
-    ) -> SCResult<AsyncCall<BigUint>> {
+        #[payment] issue_cost: Self::BigUint,
+    ) -> SCResult<AsyncCall<Self::SendApi>> {
         only_owner!(self, "Permission denied");
-        require!(
-            self.proxy_pair().token_id().is_empty(),
-            "SFT already issued"
-        );
+        require!(self.wrapped_lp_token_id().is_empty(), "SFT already issued");
         self.issue_nft(
             token_display_name,
             token_ticker,
@@ -67,11 +56,11 @@ pub trait ProxyDexImpl {
         &self,
         token_display_name: BoxedBytes,
         token_ticker: BoxedBytes,
-        #[payment] issue_cost: BigUint,
-    ) -> SCResult<AsyncCall<BigUint>> {
+        #[payment] issue_cost: Self::BigUint,
+    ) -> SCResult<AsyncCall<Self::SendApi>> {
         only_owner!(self, "Permission denied");
         require!(
-            self.proxy_farm().token_id().is_empty(),
+            self.wrapped_farm_token_id().is_empty(),
             "SFT already issued"
         );
         self.issue_nft(
@@ -86,10 +75,10 @@ pub trait ProxyDexImpl {
         &self,
         token_display_name: BoxedBytes,
         token_ticker: BoxedBytes,
-        issue_cost: BigUint,
+        issue_cost: Self::BigUint,
         request_type: IssueRequestType,
-    ) -> SCResult<AsyncCall<BigUint>> {
-        Ok(ESDTSystemSmartContractProxy::new()
+    ) -> SCResult<AsyncCall<Self::SendApi>> {
+        Ok(ESDTSystemSmartContractProxy::new_proxy_obj(self.send())
             .issue_semi_fungible(
                 issue_cost,
                 &token_display_name,
@@ -116,10 +105,10 @@ pub trait ProxyDexImpl {
         match result {
             AsyncCallResult::Ok(token_id) => match request_type {
                 IssueRequestType::ProxyPair => {
-                    self.proxy_pair().token_id().set(&token_id);
+                    self.wrapped_lp_token_id().set(&token_id);
                 }
                 IssueRequestType::ProxyFarm => {
-                    self.proxy_farm().token_id().set(&token_id);
+                    self.wrapped_farm_token_id().set(&token_id);
                 }
             },
             AsyncCallResult::Err(_) => {
@@ -141,10 +130,10 @@ pub trait ProxyDexImpl {
         token: TokenIdentifier,
         address: Address,
         #[var_args] roles: VarArgs<EsdtLocalRole>,
-    ) -> SCResult<AsyncCall<BigUint>> {
+    ) -> SCResult<AsyncCall<Self::SendApi>> {
         only_owner!(self, "Permission denied");
         require!(!roles.is_empty(), "Empty roles");
-        Ok(ESDTSystemSmartContractProxy::new()
+        Ok(ESDTSystemSmartContractProxy::new_proxy_obj(self.send())
             .set_special_roles(&address, token.as_esdt_identifier(), &roles.as_slice())
             .async_call())
     }

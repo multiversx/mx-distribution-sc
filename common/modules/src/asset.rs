@@ -3,11 +3,11 @@ elrond_wasm::derive_imports!();
 
 const MINT_TOKENS_GAS_LIMIT: u64 = 5000000;
 
-#[elrond_wasm_derive::module(AssetModule)]
+#[elrond_wasm_derive::module]
 pub trait AssetModuleImpl {
-    fn mint_and_send(&self, address: &Address, amount: &BigUint) {
+    fn mint_and_send_assets(&self, address: &Address, amount: &Self::BigUint) {
         if amount > &0 {
-            let token_id = self.token_id().get();
+            let token_id = self.asset_token_id().get();
             self.send().esdt_local_mint(
                 MINT_TOKENS_GAS_LIMIT,
                 &token_id.as_esdt_identifier(),
@@ -18,5 +18,5 @@ pub trait AssetModuleImpl {
     }
 
     #[storage_mapper("distributed_token_id")]
-    fn token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
+    fn asset_token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 }

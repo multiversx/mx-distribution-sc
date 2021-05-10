@@ -1,8 +1,8 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-#[elrond_wasm_derive::module(ProxyCommonModule)]
-pub trait ProxyCommonModuleImpl {
+#[elrond_wasm_derive::module]
+pub trait ProxyCommonModule {
     #[endpoint(addAcceptedLockedAssetTokenId)]
     fn add_accepted_locked_asset_token_id(&self, token_id: TokenIdentifier) -> SCResult<()> {
         sc_try!(self.require_permissions());

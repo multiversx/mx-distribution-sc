@@ -1,43 +1,47 @@
+#![allow(non_snake_case)]
+
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
 type Nonce = u64;
 type Epoch = u64;
-pub use crate::asset::*;
+use super::asset;
 
 use distrib_common::*;
 use elrond_wasm::{require, sc_error, sc_try};
 
 const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
-#[elrond_wasm_derive::module(LockedAssetModule)]
-pub trait LockedAssetModuleImpl {
-    #[module(AssetModule)]
-    fn asset(&self) -> AssetModule<T, BigInt, BigUint>;
-
-    fn create_and_send_multiple(
+#[elrond_wasm_derive::module]
+pub trait LockedAssetModule: asset::AssetModuleImpl {
+    fn create_and_send_multiple_locked_assets(
         &self,
         caller: &Address,
-        asset_amounts: &[BigUint],
+        asset_amounts: &[Self::BigUint],
         unlock_milestones_vec: &[Vec<UnlockMilestone>],
     ) -> SCResult<()> {
-        let locked_token_id = self.token_id().get();
+        let locked_token_id = self.asset_token_id().get();
         for (amount, unlock_milestones) in asset_amounts.iter().zip(unlock_milestones_vec.iter()) {
-            self.create_and_send(caller, &locked_token_id, &amount, &unlock_milestones);
+            self.create_and_send_locked_assets(
+                caller,
+                &locked_token_id,
+                &amount,
+                &unlock_milestones,
+            );
         }
         Ok(())
     }
 
-    fn create_and_send(
+    fn create_and_send_locked_assets(
         &self,
         caller: &Address,
         token_id: &TokenIdentifier,
-        amount: &BigUint,
+        amount: &Self::BigUint,
         unlock_milestones: &[UnlockMilestone],
     ) {
         if amount > &0 {
             self.create_tokens(&token_id, &amount, unlock_milestones);
-            let last_created_nonce = self.token_nonce().get();
+            let last_created_nonce = self.locked_asset_token_nonce().get();
             self.send()
                 .transfer_tokens(&token_id, last_created_nonce, &amount, &caller);
         }
@@ -46,7 +50,7 @@ pub trait LockedAssetModuleImpl {
     fn create_tokens(
         &self,
         token: &TokenIdentifier,
-        amount: &BigUint,
+        amount: &Self::BigUint,
         unlock_milestones: &[UnlockMilestone],
     ) {
         let attributes = LockedTokenAttributes {
@@ -57,7 +61,7 @@ pub trait LockedAssetModuleImpl {
             token.as_esdt_identifier(),
             amount,
             &BoxedBytes::empty(),
-            &BigUint::zero(),
+            &Self::BigUint::zero(),
             &H256::zero(),
             &attributes,
             &[BoxedBytes::empty()],
@@ -85,10 +89,12 @@ pub trait LockedAssetModuleImpl {
         }
     }
 
-    fn unlock_assets(&self) -> SCResult<()> {
+    #[payable("*")]
+    #[endpoint]
+    fn unlockAssets(&self) -> SCResult<()> {
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
-        require!(token_id == self.token_id().get(), "Bad payment token");
+        require!(token_id == self.asset_token_id().get(), "Bad payment token");
 
         let attributes = sc_try!(self.get_attributes(&token_id, token_nonce));
         let current_block_epoch = self.blockchain().get_block_epoch();
@@ -98,12 +104,12 @@ pub trait LockedAssetModuleImpl {
         require!(unlock_amount > 0, "Method called too soon");
 
         let caller = self.blockchain().get_caller();
-        self.asset().mint_and_send(&caller, &unlock_amount);
+        self.mint_and_send_assets(&caller, &unlock_amount);
 
         let new_unlock_milestones =
             self.create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
         let locked_remaining = amount.clone() - unlock_amount;
-        self.create_and_send(
+        self.create_and_send_locked_assets(
             &caller,
             &token_id,
             &locked_remaining,
@@ -117,12 +123,13 @@ pub trait LockedAssetModuleImpl {
 
     fn get_unlock_amount(
         &self,
-        amount: &BigUint,
+        amount: &Self::BigUint,
         current_epoch: Epoch,
         unlock_milestones: &[UnlockMilestone],
-    ) -> BigUint {
-        amount * &BigUint::from(self.get_unlock_precent(current_epoch, unlock_milestones) as u64)
-            / BigUint::from(100u64)
+    ) -> Self::BigUint {
+        amount
+            * &Self::BigUint::from(self.get_unlock_precent(current_epoch, unlock_milestones) as u64)
+            / Self::BigUint::from(100u64)
     }
 
     fn get_unlock_precent(
@@ -169,14 +176,14 @@ pub trait LockedAssetModuleImpl {
     }
 
     fn increase_nonce(&self) -> Nonce {
-        let new_nonce = self.token_nonce().get() + 1;
-        self.token_nonce().set(&new_nonce);
+        let new_nonce = self.locked_asset_token_nonce().get() + 1;
+        self.locked_asset_token_nonce().set(&new_nonce);
         new_nonce
     }
 
     #[storage_mapper("locked_token_id")]
-    fn token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
+    fn locked_asset_token_id(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 
     #[storage_mapper("locked_token_nonce")]
-    fn token_nonce(&self) -> SingleValueMapper<Self::Storage, Nonce>;
+    fn locked_asset_token_nonce(&self) -> SingleValueMapper<Self::Storage, Nonce>;
 }

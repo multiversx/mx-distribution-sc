@@ -8,7 +8,7 @@ type Epoch = u64;
 use super::asset;
 
 use distrib_common::*;
-use elrond_wasm::{require, sc_error, sc_try};
+use elrond_wasm::{require, sc_error};
 
 const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
@@ -20,7 +20,7 @@ pub trait LockedAssetModule: asset::AssetModuleImpl {
         asset_amounts: &[Self::BigUint],
         unlock_milestones_vec: &[Vec<UnlockMilestone>],
     ) -> SCResult<()> {
-        let locked_token_id = self.asset_token_id().get();
+        let locked_token_id = self.locked_asset_token_id().get();
         for (amount, unlock_milestones) in asset_amounts.iter().zip(unlock_milestones_vec.iter()) {
             self.create_and_send_locked_assets(
                 caller,
@@ -89,14 +89,12 @@ pub trait LockedAssetModule: asset::AssetModuleImpl {
         }
     }
 
-    #[payable("*")]
-    #[endpoint]
-    fn unlockAssets(&self) -> SCResult<()> {
+    fn unlock_assets(&self) -> SCResult<()> {
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
-        require!(token_id == self.asset_token_id().get(), "Bad payment token");
+        require!(token_id == self.locked_asset_token_id().get(), "Bad payment token");
 
-        let attributes = sc_try!(self.get_attributes(&token_id, token_nonce));
+        let attributes = self.get_attributes(&token_id, token_nonce)?;
         let current_block_epoch = self.blockchain().get_block_epoch();
         let unlock_amount =
             self.get_unlock_amount(&amount, current_block_epoch, &attributes.unlock_milestones);

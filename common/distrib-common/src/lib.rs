@@ -31,11 +31,6 @@ pub struct LockedTokenAttributes {
     pub unlock_milestones: Vec<UnlockMilestone>,
 }
 
-#[derive(TopEncode, TopDecode, PartialEq, TypeAbi)]
-pub struct TokenAmountPair<BigUint: BigUintApi> {
-    pub token_id: TokenIdentifier,
-    pub amount: BigUint,
-}
 #[derive(TopEncode, TopDecode, TypeAbi)]
 pub struct WrappedLpTokenAttributes<BigUint: BigUintApi> {
     pub lp_token_id: TokenIdentifier,

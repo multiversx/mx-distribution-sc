@@ -94,7 +94,7 @@ pub trait LockedRewardsImpl: asset::AssetModuleImpl + locked_asset::LockedAssetM
 
     #[endpoint(addEpochReward)]
     fn add_epoch_reward(&self, epoch: u64, percentage: Self::BigUint) -> SCResult<()> {
-        sc_try!(self.require_caller_owner());
+        self.require_caller_owner()?;
         require!(
             !self.epoch_rewards_map().contains_key(&epoch),
             "There is already a reward set for that epoch"
@@ -107,7 +107,7 @@ pub trait LockedRewardsImpl: asset::AssetModuleImpl + locked_asset::LockedAssetM
 
     #[endpoint(removeEpochReward)]
     fn remove_epoch_reward(&self, epoch: u64) -> SCResult<()> {
-        sc_try!(self.require_caller_owner());
+        self.require_caller_owner()?;
         require!(
             self.epoch_rewards_map().contains_key(&epoch),
             "There is no reward set for that epoch"
@@ -128,7 +128,7 @@ pub trait LockedRewardsImpl: asset::AssetModuleImpl + locked_asset::LockedAssetM
         #[payment_token] token_id: TokenIdentifier,
         #[payment] amount: Self::BigUint,
     ) -> SCResult<()> {
-        sc_try!(self.require_nft_issued());
+        self.require_nft_issued()?;
         require!(
             token_id == self.asset_token_id().get(),
             "Wrong token sent as payment"
@@ -166,6 +166,12 @@ pub trait LockedRewardsImpl: asset::AssetModuleImpl + locked_asset::LockedAssetM
         );
 
         Ok(())
+    }
+
+    #[payable("*")]
+    #[endpoint(unlockAssets)]
+    fn unlock_assets_endpoint(&self) -> SCResult<()> {
+        self.unlock_assets()
     }
 
     // views

@@ -40,7 +40,7 @@ pub trait EsdtDistribution:
         #[var_args] unlock_milestones: VarArgs<UnlockMilestone>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_op_ongoing());
+        self.require_global_op_ongoing()?;
         require!(
             spread_epoch >= self.blockchain().get_block_epoch(),
             "Spread epoch in the past"
@@ -53,7 +53,7 @@ pub trait EsdtDistribution:
                 < spread_epoch,
             "Community distribution should be added in chronological order"
         );
-        sc_try!(self.validate_unlock_milestones(&unlock_milestones));
+        self.validate_unlock_milestones(&unlock_milestones)?;
         let distrib = CommunityDistribution {
             total_amount: total_amount.clone(),
             spread_epoch,
@@ -71,8 +71,8 @@ pub trait EsdtDistribution:
         #[var_args] user_assets: VarArgs<MultiArg2<Address, Self::BigUint>>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_op_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         require!(!user_assets.is_empty(), "Empty assets vec");
         self.add_all_user_assets_to_map(spread_epoch, user_assets, false)
     }
@@ -84,8 +84,8 @@ pub trait EsdtDistribution:
         #[var_args] user_assets: VarArgs<MultiArg2<Address, Self::BigUint>>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_op_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         require!(
             !self
                 .community_distribution_list()
@@ -101,8 +101,8 @@ pub trait EsdtDistribution:
 
     #[endpoint(claimAssets)]
     fn claim_assets(&self) -> SCResult<Self::BigUint> {
-        sc_try!(self.require_global_op_not_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_not_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         let caller = self.blockchain().get_caller();
         let (assets_amounts, _) = self.calculate_user_assets(&caller, false, true);
         let cummulated_amount = self.sum_of(&assets_amounts);
@@ -112,16 +112,16 @@ pub trait EsdtDistribution:
 
     #[endpoint(claimLockedAssets)]
     fn claim_locked_assets(&self) -> SCResult<Self::BigUint> {
-        sc_try!(self.require_global_op_not_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_not_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         let caller = self.blockchain().get_caller();
         let (assets_amounts, unlock_milestones_vec) =
             self.calculate_user_assets(&caller, true, true);
-        sc_try!(self.create_and_send_multiple_locked_assets(
+        self.create_and_send_multiple_locked_assets(
             &caller,
             &assets_amounts,
             &unlock_milestones_vec
-        ));
+        )?;
         let cummulated_amount = self.sum_of(&assets_amounts);
         Ok(cummulated_amount)
     }
@@ -135,8 +135,8 @@ pub trait EsdtDistribution:
     #[endpoint(undoLastCommunityDistribution)]
     fn undo_last_community_distrib(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_op_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         self.community_distribution_list().pop_front();
         Ok(())
     }
@@ -144,10 +144,16 @@ pub trait EsdtDistribution:
     #[endpoint(undoUserDistributedAssetsBetweenEpochs)]
     fn undo_user_assets_between_epochs(&self, lower: u64, higher: u64) -> SCResult<usize> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_op_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         require!(lower <= higher, "Bad input values");
         Ok(self.remove_asset_entries_between_epochs(lower, higher))
+    }
+
+    #[payable("*")]
+    #[endpoint(unlockAssets)]
+    fn unlock_assets_endpoint(&self) -> SCResult<()> {
+        self.unlock_assets()
     }
 
     #[payable("EGLD")]
@@ -218,8 +224,8 @@ pub trait EsdtDistribution:
 
     #[view(calculateAssets)]
     fn calculate_assets_view(&self, address: Address) -> SCResult<Self::BigUint> {
-        sc_try!(self.require_global_op_not_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_not_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         let (assets_amounts, _) = self.calculate_user_assets(&address, false, false);
         let cummulated_amount = self.sum_of(&assets_amounts);
         Ok(cummulated_amount)
@@ -227,8 +233,8 @@ pub trait EsdtDistribution:
 
     #[view(calculateLockedAssets)]
     fn calculate_locked_assets_view(&self, address: Address) -> SCResult<Self::BigUint> {
-        sc_try!(self.require_global_op_not_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_not_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         let (assets_amounts, _) = self.calculate_user_assets(&address, true, false);
         let cummulated_amount = self.sum_of(&assets_amounts);
         Ok(cummulated_amount)
@@ -299,12 +305,12 @@ pub trait EsdtDistribution:
                 "User assets sums above community total assets"
             );
             last_community_distrib.after_planning_amount -= asset_amount.clone();
-            sc_try!(self.add_user_asset_entry(
+            self.add_user_asset_entry(
                 user_address,
                 asset_amount,
                 spread_epoch,
                 locked_assets
-            ));
+            )?;
         }
         self.community_distribution_list().pop_front();
         self.community_distribution_list()

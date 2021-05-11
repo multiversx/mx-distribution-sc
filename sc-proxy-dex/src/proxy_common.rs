@@ -5,15 +5,15 @@ elrond_wasm::derive_imports!();
 pub trait ProxyCommonModule {
     #[endpoint(addAcceptedLockedAssetTokenId)]
     fn add_accepted_locked_asset_token_id(&self, token_id: TokenIdentifier) -> SCResult<()> {
-        sc_try!(self.require_permissions());
+        self.require_permissions()?;
         self.accepted_locked_assets().insert(token_id);
         Ok(())
     }
 
     #[endpoint(removeAcceptedLockedAssetTokenId)]
     fn remove_accepted_locked_asset_token_id(&self, token_id: TokenIdentifier) -> SCResult<()> {
-        sc_try!(self.require_permissions());
-        sc_try!(self.require_is_accepted_locked_asset(&token_id));
+        self.require_permissions()?;
+        self.require_is_accepted_locked_asset(&token_id)?;
         self.accepted_locked_assets().remove(&token_id);
         Ok(())
     }

@@ -6,19 +6,19 @@ elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
 type Nonce = u64;
-use elrond_wasm::{require, sc_error, sc_try};
+use elrond_wasm::{require, sc_error};
 
 use core::cmp::min;
 use distrib_common::*;
+use dex_common::*;
 
 use super::proxy_common;
 
-type AddLiquidityResultType<BigUint> = SCResult<
-    MultiResult3<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>,
->;
+type AddLiquidityResultType<BigUint> = 
+    MultiResult3<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
 
 type RemoveLiquidityResultType<BigUint> =
-    SCResult<MultiResult2<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>>;
+    MultiResult2<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
 
 #[derive(TopEncode, TopDecode, PartialEq, Clone, Copy, TypeAbi)]
 pub struct ProxyPairParams {
@@ -41,22 +41,22 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
 
     #[endpoint(setProxyPairParams)]
     fn set_proxy_pair_params(&self, proxy_params: ProxyPairParams) -> SCResult<()> {
-        sc_try!(self.require_permissions());
+        self.require_permissions()?;
         self.proxy_pair_params().set(&proxy_params);
         Ok(())
     }
 
     #[endpoint(addPairToIntermediate)]
     fn add_pair_to_intermediate(&self, pair_address: Address) -> SCResult<()> {
-        sc_try!(self.require_permissions());
+        self.require_permissions()?;
         self.intermediated_pairs().insert(pair_address);
         Ok(())
     }
 
     #[endpoint(removeIntermediatedPair)]
     fn remove_intermediated_pair(&self, pair_address: Address) -> SCResult<()> {
-        sc_try!(self.require_permissions());
-        sc_try!(self.require_is_intermediated_pair(&pair_address));
+        self.require_permissions()?;
+        self.require_is_intermediated_pair(&pair_address)?;
         self.intermediated_pairs().remove(&pair_address);
         Ok(())
     }
@@ -64,7 +64,7 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
     #[payable("*")]
     #[endpoint(acceptEsdtPaymentProxy)]
     fn accept_esdt_payment_proxy(&self, pair_address: Address) -> SCResult<()> {
-        sc_try!(self.require_is_intermediated_pair(&pair_address));
+        self.require_is_intermediated_pair(&pair_address)?;
 
         let token_nonce = self.call_value().esdt_token_nonce();
         let (amount, token_id) = self.call_value().payment_token_pair();
@@ -102,9 +102,9 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
         second_token_amount_desired: Self::BigUint,
         second_token_amount_min: Self::BigUint,
     ) -> SCResult<()> {
-        sc_try!(self.require_is_intermediated_pair(&pair_address));
-        sc_try!(self.require_proxy_pair_params_not_empty());
-        sc_try!(self.require_wrapped_lp_token_id_not_empty());
+        self.require_is_intermediated_pair(&pair_address)?;
+        self.require_proxy_pair_params_not_empty()?;
+        self.require_wrapped_lp_token_id_not_empty()?;
         let proxy_params = self.proxy_pair_params().get();
 
         let caller = self.blockchain().get_caller();
@@ -141,30 +141,30 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
         );
 
         // Actual 2x acceptEsdtPayment
-        sc_try!(self.forward_to_pair(
+        self.forward_to_pair(
             &pair_address,
             &first_token_id,
             first_token_nonce,
             &first_token_amount_desired,
             &proxy_params,
-        ));
-        sc_try!(self.forward_to_pair(
+        );
+        self.forward_to_pair(
             &pair_address,
             &second_token_id,
             second_token_nonce,
             &second_token_amount_desired,
             &proxy_params,
-        ));
+        );
 
         // Actual adding of liquidity
-        let result = sc_try!(self.actual_add_liquidity(
+        let result = self.actual_add_liquidity(
             &pair_address,
             &first_token_amount_desired,
             &first_token_amount_min,
             &second_token_amount_desired,
             &second_token_amount_min,
             &proxy_params
-        ));
+        );
 
         let result_tuple = result.0;
         let lp_received = result_tuple.0;
@@ -257,9 +257,9 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
         first_token_amount_min: Self::BigUint,
         second_token_amount_min: Self::BigUint,
     ) -> SCResult<()> {
-        sc_try!(self.require_is_intermediated_pair(&pair_address));
-        sc_try!(self.require_proxy_pair_params_not_empty());
-        sc_try!(self.require_wrapped_lp_token_id_not_empty());
+        self.require_is_intermediated_pair(&pair_address)?;
+        self.require_proxy_pair_params_not_empty()?;
+        self.require_wrapped_lp_token_id_not_empty()?;
         let proxy_params = self.proxy_pair_params().get();
 
         let token_nonce = self.call_value().esdt_token_nonce();
@@ -272,19 +272,19 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
 
         let caller = self.blockchain().get_caller();
         let lp_token_id = self.ask_for_lp_token_id(&pair_address, &proxy_params);
-        let attributes = sc_try!(self.get_wrapped_lp_token_attributes(&token_id, token_nonce));
+        let attributes = self.get_wrapped_lp_token_attributes(&token_id, token_nonce)?;
         require!(lp_token_id == attributes.lp_token_id, "Bad input address");
 
         let locked_asset_token_id = attributes.locked_assets_token_id;
         let asset_token_id = self.asset_token_id().get();
-        let tokens_for_position = sc_try!(self.actual_remove_liquidity(
+        let tokens_for_position = self.actual_remove_liquidity(
             &pair_address,
             &lp_token_id,
             &amount,
             &first_token_amount_min,
             &second_token_amount_min,
             &proxy_params
-        ))
+        )
         .into_tuple();
 
         let fungible_token_id: TokenIdentifier;
@@ -521,7 +521,7 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
         token_nonce: Nonce,
         amount: &Self::BigUint,
         proxy_params: &ProxyPairParams,
-    ) -> SCResult<()> {
+    ) {
         let token_to_send: TokenIdentifier;
         if token_nonce == 0 {
             token_to_send = token_id.clone();
@@ -544,7 +544,6 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
         self.pair_contract_proxy(pair_address.clone())
             .acceptEsdtPayment(token_to_send.clone(), amount.clone())
             .execute_on_dest_context_ignore_result(gas_limit);
-        Ok(())
     }
 
     fn increase_temporary_funds_amount(

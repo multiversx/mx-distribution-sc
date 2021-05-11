@@ -30,6 +30,9 @@ path = "../common/distrib-common"
 [dependencies.modules]
 path = "../common/modules"
 
+[dependencies.dex-common]
+path = "../../sc-dex-rs/common/dex-common"
+
 [dependencies.elrond_dex_pair]
 path = "../../sc-dex-rs/elrond_dex_pair"
 

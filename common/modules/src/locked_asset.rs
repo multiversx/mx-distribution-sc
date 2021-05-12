@@ -13,20 +13,18 @@ use elrond_wasm::{require, sc_error};
 const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
 #[elrond_wasm_derive::module]
-pub trait LockedAssetModule: asset::AssetModuleImpl {
+pub trait LockedAssetModule: asset::AssetModule {
     fn create_and_send_multiple_locked_assets(
         &self,
-        caller: &Address,
+        address: &Address,
         asset_amounts: &[Self::BigUint],
         unlock_milestones_vec: &[Vec<UnlockMilestone>],
     ) -> SCResult<()> {
-        let locked_token_id = self.locked_asset_token_id().get();
         for (amount, unlock_milestones) in asset_amounts.iter().zip(unlock_milestones_vec.iter()) {
             self.create_and_send_locked_assets(
-                caller,
-                &locked_token_id,
                 &amount,
                 &unlock_milestones,
+                address,
             );
         }
         Ok(())
@@ -34,16 +32,16 @@ pub trait LockedAssetModule: asset::AssetModuleImpl {
 
     fn create_and_send_locked_assets(
         &self,
-        caller: &Address,
-        token_id: &TokenIdentifier,
         amount: &Self::BigUint,
         unlock_milestones: &[UnlockMilestone],
+        address: &Address,
     ) {
         if amount > &0 {
+            let token_id = self.locked_asset_token_id().get();
             self.create_tokens(&token_id, &amount, unlock_milestones);
             let last_created_nonce = self.locked_asset_token_nonce().get();
             self.send()
-                .transfer_tokens(&token_id, last_created_nonce, &amount, &caller);
+                .transfer_tokens(&token_id, last_created_nonce, &amount, &address);
         }
     }
 
@@ -108,10 +106,9 @@ pub trait LockedAssetModule: asset::AssetModuleImpl {
             self.create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
         let locked_remaining = amount.clone() - unlock_amount;
         self.create_and_send_locked_assets(
-            &caller,
-            &token_id,
             &locked_remaining,
             &new_unlock_milestones,
+            &caller,
         );
 
         self.send()
@@ -177,6 +174,30 @@ pub trait LockedAssetModule: asset::AssetModuleImpl {
         let new_nonce = self.locked_asset_token_nonce().get() + 1;
         self.locked_asset_token_nonce().set(&new_nonce);
         new_nonce
+    }
+
+    fn validate_unlock_milestones(
+        &self,
+        unlock_milestones: &VarArgs<UnlockMilestone>,
+    ) -> SCResult<()> {
+        let mut percents_sum: u8 = 0;
+        let mut last_milestone_unlock_epoch: u64 = 0;
+        for milestone in unlock_milestones.0.clone() {
+            require!(
+                milestone.unlock_epoch > last_milestone_unlock_epoch,
+                "Unlock epochs not in order"
+            );
+            require!(
+                milestone.unlock_percent <= 100,
+                "Unlock percent more than 100"
+            );
+            last_milestone_unlock_epoch = milestone.unlock_epoch;
+            percents_sum += milestone.unlock_percent;
+        }
+        if !unlock_milestones.is_empty() {
+            require!(percents_sum == 100, "Percents do not sum up to 100");
+        }
+        Ok(())
     }
 
     #[storage_mapper("locked_token_id")]

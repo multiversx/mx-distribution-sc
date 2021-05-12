@@ -11,7 +11,7 @@ const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
 
 #[elrond_wasm_derive::contract]
 pub trait EsdtDistribution:
-    asset::AssetModuleImpl + locked_asset::LockedAssetModule + global_op::GlobalOperationModule
+    asset::AssetModule + locked_asset::LockedAssetModule + global_op::GlobalOperationModule
 {
     #[init]
     fn init(&self, asset_token_id: TokenIdentifier) {
@@ -156,72 +156,6 @@ pub trait EsdtDistribution:
         self.unlock_assets()
     }
 
-    #[payable("EGLD")]
-    #[endpoint(issueNft)]
-    fn issue_nft(
-        &self,
-        token_display_name: BoxedBytes,
-        token_ticker: BoxedBytes,
-        #[payment] issue_cost: Self::BigUint,
-    ) -> SCResult<AsyncCall<Self::SendApi>> {
-        only_owner!(self, "Permission denied");
-        require!(
-            self.locked_asset_token_id().is_empty(),
-            "NFT already issued"
-        );
-
-        Ok(ESDTSystemSmartContractProxy::new_proxy_obj(self.send())
-            .issue_semi_fungible(
-                issue_cost,
-                &token_display_name,
-                &token_ticker,
-                SemiFungibleTokenProperties {
-                    can_add_special_roles: true,
-                    can_change_owner: false,
-                    can_freeze: false,
-                    can_pause: false,
-                    can_upgrade: true,
-                    can_wipe: false,
-                },
-            )
-            .async_call()
-            .with_callback(self.callbacks().issue_nft_callback()))
-    }
-
-    #[callback]
-    fn issue_nft_callback(&self, #[call_result] result: AsyncCallResult<TokenIdentifier>) {
-        match result {
-            AsyncCallResult::Ok(token_id) => {
-                self.locked_asset_token_id().set(&token_id);
-            }
-            AsyncCallResult::Err(_) => {
-                // return payment to initial caller, which can only be the owner
-                let (payment, token_id) = self.call_value().payment_token_pair();
-                self.send().direct(
-                    &self.blockchain().get_owner_address(),
-                    &token_id,
-                    &payment,
-                    &[],
-                );
-            }
-        };
-    }
-
-    #[endpoint(setLocalRoles)]
-    fn set_local_roles(
-        &self,
-        token: TokenIdentifier,
-        address: Address,
-        #[var_args] roles: VarArgs<EsdtLocalRole>,
-    ) -> SCResult<AsyncCall<Self::SendApi>> {
-        only_owner!(self, "Permission denied");
-        require!(token == self.locked_asset_token_id().get(), "Bad token id");
-        require!(!roles.is_empty(), "Empty roles");
-        Ok(ESDTSystemSmartContractProxy::new_proxy_obj(self.send())
-            .set_special_roles(&address, token.as_esdt_identifier(), &roles.as_slice())
-            .async_call())
-    }
-
     #[view(calculateAssets)]
     fn calculate_assets_view(&self, address: Address) -> SCResult<Self::BigUint> {
         self.require_global_op_not_ongoing()?;
@@ -261,30 +195,6 @@ pub trait EsdtDistribution:
             .map(|last_community_distrib| last_community_distrib.unlock_milestones)
             .unwrap_or_default()
             .into()
-    }
-
-    fn validate_unlock_milestones(
-        &self,
-        unlock_milestones: &VarArgs<UnlockMilestone>,
-    ) -> SCResult<()> {
-        let mut percents_sum: u8 = 0;
-        let mut last_milestone_unlock_epoch: u64 = 0;
-        for milestone in unlock_milestones.0.clone() {
-            require!(
-                milestone.unlock_epoch > last_milestone_unlock_epoch,
-                "Unlock epochs not in order"
-            );
-            require!(
-                milestone.unlock_percent <= 100,
-                "Unlock percent more than 100"
-            );
-            last_milestone_unlock_epoch = milestone.unlock_epoch;
-            percents_sum += milestone.unlock_percent;
-        }
-        if !unlock_milestones.is_empty() {
-            require!(percents_sum == 100, "Percents do not sum up to 100");
-        }
-        Ok(())
     }
 
     fn add_all_user_assets_to_map(

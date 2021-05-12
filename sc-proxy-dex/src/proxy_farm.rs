@@ -334,7 +334,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         );
         self.farm_contract_proxy(farm_address.clone())
             .enterFarm(lp_token_id.clone(), amount.clone())
-            .execute_on_dest_context_custom_range(gas_limit, |_, after| (after - 1, after))
+            .execute_on_dest_context(gas_limit)
     }
 
     fn actual_exit_farm(
@@ -352,7 +352,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         self.farm_contract_proxy(farm_address.clone())
             .exitFarm(farm_token_id.clone(), amount.clone())
             .with_nft_nonce(farm_token_nonce)
-            .execute_on_dest_context_custom_range(gas_limit, |_, after| (after - 2, after))
+            .execute_on_dest_context(gas_limit)
     }
 
     fn actual_claim_rewards(
@@ -370,7 +370,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         self.farm_contract_proxy(farm_address.clone())
             .claimRewards(farm_token_id.clone(), amount.clone())
             .with_nft_nonce(farm_token_nonce)
-            .execute_on_dest_context_custom_range(gas_limit, |_, after| (after - 2, after))
+            .execute_on_dest_context(gas_limit)
     }
 
     fn increase_wrapped_farm_token_nonce(&self) -> Nonce {

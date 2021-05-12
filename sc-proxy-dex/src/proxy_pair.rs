@@ -543,7 +543,7 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
         );
         self.pair_contract_proxy(pair_address.clone())
             .acceptEsdtPayment(token_to_send.clone(), amount.clone())
-            .execute_on_dest_context_ignore_result(gas_limit);
+            .execute_on_dest_context(gas_limit);
     }
 
     fn increase_temporary_funds_amount(

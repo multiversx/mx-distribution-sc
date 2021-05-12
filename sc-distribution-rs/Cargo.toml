@@ -30,6 +30,9 @@ path = "../common/distrib-common"
 [dependencies.modules]
 path = "../common/modules"
 
+[dependencies.sc-locked-asset-factory]
+path = "../sc-locked-asset-factory"
+
 [dev-dependencies.elrond-wasm-debug]
 version = "0.15"
 path = "../../elrond-wasm-rs/elrond-wasm-debug"

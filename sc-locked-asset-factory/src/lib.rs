@@ -7,6 +7,8 @@ elrond_wasm::derive_imports!();
 use distrib_common::*;
 use modules::*;
 
+mod locked_asset;
+
 #[elrond_wasm_derive::contract]
 pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModule {
     #[init]
@@ -71,11 +73,6 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
         self.validate_unlock_milestones(&schedule)?;
         self.create_and_send_locked_assets(&amount, &schedule.0, &address);
         Ok(())
-    }
-
-    #[endpoint]
-    fn unlockAssets(&self) -> SCResult<()> {
-        self.unlock_assets()
     }
 
     #[payable("EGLD")]

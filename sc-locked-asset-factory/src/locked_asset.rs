@@ -5,31 +5,15 @@ elrond_wasm::derive_imports!();
 
 type Nonce = u64;
 type Epoch = u64;
-use super::asset;
 
 use distrib_common::*;
+use modules::*;
 use elrond_wasm::{require, sc_error};
 
 const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
 #[elrond_wasm_derive::module]
 pub trait LockedAssetModule: asset::AssetModule {
-    fn create_and_send_multiple_locked_assets(
-        &self,
-        address: &Address,
-        asset_amounts: &[Self::BigUint],
-        unlock_milestones_vec: &[Vec<UnlockMilestone>],
-    ) -> SCResult<()> {
-        for (amount, unlock_milestones) in asset_amounts.iter().zip(unlock_milestones_vec.iter()) {
-            self.create_and_send_locked_assets(
-                &amount,
-                &unlock_milestones,
-                address,
-            );
-        }
-        Ok(())
-    }
-
     fn create_and_send_locked_assets(
         &self,
         amount: &Self::BigUint,
@@ -87,7 +71,8 @@ pub trait LockedAssetModule: asset::AssetModule {
         }
     }
 
-    fn unlock_assets(&self) -> SCResult<()> {
+    #[endpoint]
+    fn unlockAssets(&self) -> SCResult<()> {
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
         require!(token_id == self.locked_asset_token_id().get(), "Bad payment token");

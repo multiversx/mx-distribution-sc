@@ -331,20 +331,6 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
                 &locked_assets_invested,
                 proxy_params.burn_tokens_gas_limit,
             );
-        } else if assets_received < locked_assets_invested {
-            let difference = locked_assets_invested - assets_received.clone();
-            self.send().burn_tokens(
-                &locked_asset_token_id,
-                attributes.locked_assets_nonce,
-                &difference,
-                proxy_params.burn_tokens_gas_limit,
-            );
-            self.send().burn_tokens(
-                &asset_token_id,
-                0,
-                &assets_received,
-                proxy_params.burn_tokens_gas_limit,
-            );
         } else {
             self.send().burn_tokens(
                 &asset_token_id,

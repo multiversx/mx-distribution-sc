@@ -10,12 +10,18 @@ const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
 
 #[elrond_wasm_derive::contract]
-pub trait EsdtDistribution:
-    asset::AssetModule + locked_asset::LockedAssetModule + global_op::GlobalOperationModule
-{
+pub trait EsdtDistribution: asset::AssetModule + global_op::GlobalOperationModule {
+    #[proxy]
+    fn locked_asset_factory_proxy(
+        &self,
+        to: Address,
+    ) -> sc_locked_asset_factory::Proxy<Self::SendApi>;
+
     #[init]
-    fn init(&self, asset_token_id: TokenIdentifier) {
+    fn init(&self, asset_token_id: TokenIdentifier, locked_asset_factory_address: Address) {
         self.asset_token_id().set(&asset_token_id);
+        self.locked_asset_factory_address()
+            .set(&locked_asset_factory_address);
     }
 
     #[endpoint(startGlobalOperation)]
@@ -61,6 +67,31 @@ pub trait EsdtDistribution:
             unlock_milestones: unlock_milestones.into_vec(),
         };
         self.community_distribution_list().push_front(distrib);
+        Ok(())
+    }
+
+    //Currently duplicated function.
+    fn validate_unlock_milestones(
+        &self,
+        unlock_milestones: &VarArgs<UnlockMilestone>,
+    ) -> SCResult<()> {
+        let mut percents_sum: u8 = 0;
+        let mut last_milestone_unlock_epoch: u64 = 0;
+        for milestone in unlock_milestones.0.clone() {
+            require!(
+                milestone.unlock_epoch > last_milestone_unlock_epoch,
+                "Unlock epochs not in order"
+            );
+            require!(
+                milestone.unlock_percent <= 100,
+                "Unlock percent more than 100"
+            );
+            last_milestone_unlock_epoch = milestone.unlock_epoch;
+            percents_sum += milestone.unlock_percent;
+        }
+        if !unlock_milestones.is_empty() {
+            require!(percents_sum == 100, "Percents do not sum up to 100");
+        }
         Ok(())
     }
 
@@ -117,11 +148,20 @@ pub trait EsdtDistribution:
         let caller = self.blockchain().get_caller();
         let (assets_amounts, unlock_milestones_vec) =
             self.calculate_user_assets(&caller, true, true);
-        self.create_and_send_multiple_locked_assets(
-            &caller,
-            &assets_amounts,
-            &unlock_milestones_vec
-        )?;
+        let to = self.locked_asset_factory_address().get();
+        let gas_limit_per_execute =
+            self.blockchain().get_gas_left() / (assets_amounts.len() as u64 + 1);
+        for it in assets_amounts.iter().zip(unlock_milestones_vec) {
+            let (amount, unlock_milestones) = it;
+            self.locked_asset_factory_proxy(to.clone())
+                .createAndForwardCustomSchedule(
+                    amount.clone(),
+                    caller.clone(),
+                    MultiArgVec::from(unlock_milestones),
+                )
+                .execute_on_dest_context(gas_limit_per_execute);
+        }
+
         let cummulated_amount = self.sum_of(&assets_amounts);
         Ok(cummulated_amount)
     }
@@ -148,12 +188,6 @@ pub trait EsdtDistribution:
         self.require_community_distribution_list_not_empty()?;
         require!(lower <= higher, "Bad input values");
         Ok(self.remove_asset_entries_between_epochs(lower, higher))
-    }
-
-    #[payable("*")]
-    #[endpoint(unlockAssets)]
-    fn unlock_assets_endpoint(&self) -> SCResult<()> {
-        self.unlock_assets()
     }
 
     #[view(calculateAssets)]
@@ -215,12 +249,7 @@ pub trait EsdtDistribution:
                 "User assets sums above community total assets"
             );
             last_community_distrib.after_planning_amount -= asset_amount.clone();
-            self.add_user_asset_entry(
-                user_address,
-                asset_amount,
-                spread_epoch,
-                locked_assets
-            )?;
+            self.add_user_asset_entry(user_address, asset_amount, spread_epoch, locked_assets)?;
         }
         self.community_distribution_list().pop_front();
         self.community_distribution_list()
@@ -341,4 +370,7 @@ pub trait EsdtDistribution:
 
     #[storage_mapper("user_asset_map")]
     fn user_asset_map(&self) -> MapMapper<Self::Storage, UserAssetKey, Self::BigUint>;
+
+    #[storage_mapper("locked_asset_factory_address")]
+    fn locked_asset_factory_address(&self) -> SingleValueMapper<Self::Storage, Address>;
 }

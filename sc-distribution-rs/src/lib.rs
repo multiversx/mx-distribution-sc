@@ -267,7 +267,7 @@ pub trait EsdtDistribution:
         &self,
         unlock_milestones: &VarArgs<UnlockMilestone>,
     ) -> SCResult<()> {
-        let mut precents_sum: u8 = 0;
+        let mut percents_sum: u8 = 0;
         let mut last_milestone_unlock_epoch: u64 = 0;
         for milestone in unlock_milestones.0.clone() {
             require!(
@@ -275,14 +275,14 @@ pub trait EsdtDistribution:
                 "Unlock epochs not in order"
             );
             require!(
-                milestone.unlock_precent <= 100,
-                "Unlock precent more than 100"
+                milestone.unlock_percent <= 100,
+                "Unlock percent more than 100"
             );
             last_milestone_unlock_epoch = milestone.unlock_epoch;
-            precents_sum += milestone.unlock_precent;
+            percents_sum += milestone.unlock_percent;
         }
         if !unlock_milestones.is_empty() {
-            require!(precents_sum == 100, "Precents do not sum up to 100");
+            require!(percents_sum == 100, "Percents do not sum up to 100");
         }
         Ok(())
     }

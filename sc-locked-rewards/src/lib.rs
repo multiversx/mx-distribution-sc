@@ -153,7 +153,7 @@ pub trait LockedRewardsImpl: asset::AssetModuleImpl + locked_asset::LockedAssetM
             &nft_amount,
             &[UnlockMilestone {
                 unlock_epoch,
-                unlock_precent: PERCENTAGE_TOTAL as u8,
+                unlock_percent: PERCENTAGE_TOTAL as u8,
             }],
         );
 

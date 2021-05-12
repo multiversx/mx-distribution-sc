@@ -126,22 +126,22 @@ pub trait LockedAssetModule: asset::AssetModuleImpl {
         unlock_milestones: &[UnlockMilestone],
     ) -> Self::BigUint {
         amount
-            * &Self::BigUint::from(self.get_unlock_precent(current_epoch, unlock_milestones) as u64)
+            * &Self::BigUint::from(self.get_unlock_percent(current_epoch, unlock_milestones) as u64)
             / Self::BigUint::from(100u64)
     }
 
-    fn get_unlock_precent(
+    fn get_unlock_percent(
         &self,
         current_epoch: Epoch,
         unlock_milestones: &[UnlockMilestone],
     ) -> u8 {
-        let mut unlock_precent = 0u8;
+        let mut unlock_percent = 0u8;
         for milestone in unlock_milestones {
             if milestone.unlock_epoch < current_epoch {
-                unlock_precent += milestone.unlock_precent;
+                unlock_percent += milestone.unlock_percent;
             }
         }
-        unlock_precent
+        unlock_percent
     }
 
     fn create_new_unlock_milestones(
@@ -150,26 +150,26 @@ pub trait LockedAssetModule: asset::AssetModuleImpl {
         old_unlock_milestones: &[UnlockMilestone],
     ) -> Vec<UnlockMilestone> {
         let mut new_unlock_milestones = Vec::<UnlockMilestone>::new();
-        let unlock_precent = self.get_unlock_precent(current_epoch, old_unlock_milestones);
-        let unlock_precent_remaining = 100u64 - (unlock_precent as u64);
-        if unlock_precent_remaining == 0 {
+        let unlock_percent = self.get_unlock_percent(current_epoch, old_unlock_milestones);
+        let unlock_percent_remaining = 100u64 - (unlock_percent as u64);
+        if unlock_percent_remaining == 0 {
             return new_unlock_milestones;
         }
         for old_milestone in old_unlock_milestones.iter() {
             if old_milestone.unlock_epoch >= current_epoch {
-                let new_unlock_precent: u64 =
-                    (old_milestone.unlock_precent as u64) * 100u64 / unlock_precent_remaining;
+                let new_unlock_percent: u64 =
+                    (old_milestone.unlock_percent as u64) * 100u64 / unlock_percent_remaining;
                 new_unlock_milestones.push(UnlockMilestone {
                     unlock_epoch: old_milestone.unlock_epoch,
-                    unlock_precent: new_unlock_precent as u8,
+                    unlock_percent: new_unlock_percent as u8,
                 });
             }
         }
-        let mut sum_of_new_precents = 0u8;
+        let mut sum_of_new_percents = 0u8;
         for new_milestone in new_unlock_milestones.iter() {
-            sum_of_new_precents += new_milestone.unlock_precent;
+            sum_of_new_percents += new_milestone.unlock_percent;
         }
-        new_unlock_milestones[0].unlock_precent += 100 - sum_of_new_precents;
+        new_unlock_milestones[0].unlock_percent += 100 - sum_of_new_percents;
         new_unlock_milestones
     }
 

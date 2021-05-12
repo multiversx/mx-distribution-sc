@@ -73,6 +73,11 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
         Ok(())
     }
 
+    #[endpoint]
+    fn unlockAssets(&self) -> SCResult<()> {
+        self.unlock_assets()
+    }
+
     #[payable("EGLD")]
     #[endpoint(issueNft)]
     fn issue_nft(

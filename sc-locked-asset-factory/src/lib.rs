@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(non_snake_case)]
 
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
@@ -42,6 +43,8 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
             self.whitelisted_contracts().contains(&caller),
             "Permission denied"
         );
+        require!(!self.locked_asset_token_id().is_empty(), "No SFT issued");
+        require!(amount > 0, "Zero input amount");
         self.create_and_send_locked_assets(
             &amount,
             &self.create_default_unlock_milestones(),
@@ -62,6 +65,8 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
             self.whitelisted_contracts().contains(&caller),
             "Permission denied"
         );
+        require!(!self.locked_asset_token_id().is_empty(), "No SFT issued");
+        require!(amount > 0, "Zero input amount");
         require!(!schedule.is_empty(), "Empty param");
         self.validate_unlock_milestones(&schedule)?;
         self.create_and_send_locked_assets(&amount, &schedule.0, &address);

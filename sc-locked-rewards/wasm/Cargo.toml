@@ -1,5 +1,5 @@
 [package]
-name = "sc_distribution_rs-wasm"
+name = "sc-locked-rewards-wasm"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
@@ -20,7 +20,7 @@ lto = true
 debug = false
 panic = "abort"
 
-[dependencies.sc_distribution_rs]
+[dependencies.sc-locked-rewards]
 features = [ "wasm-output-mode",]
 default-features = false
 path = ".."
@@ -29,4 +29,3 @@ path = ".."
 version = "0.15"
 features = [ "wasm-output-mode",]
 path = "../../../elrond-wasm-rs/elrond-wasm-output"
-

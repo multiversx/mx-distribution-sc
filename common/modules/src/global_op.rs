@@ -1,16 +1,34 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-#[elrond_wasm_derive::module(GlobalOperationModuleImpl)]
+use elrond_wasm::{require, sc_error};
+
+#[elrond_wasm_derive::module]
 pub trait GlobalOperationModule {
-    fn start(&self) {
-        self.is_ongoing().set(&true);
+    fn global_op_start(&self) {
+        self.global_op_is_ongoing().set(&true);
     }
 
-    fn stop(&self) {
-        self.is_ongoing().set(&false);
+    fn global_op_stop(&self) {
+        self.global_op_is_ongoing().set(&false);
     }
 
     #[storage_mapper("global_operation_ongoing")]
-    fn is_ongoing(&self) -> SingleValueMapper<Self::Storage, bool>;
+    fn global_op_is_ongoing(&self) -> SingleValueMapper<Self::Storage, bool>;
+
+    fn require_global_op_not_ongoing(&self) -> SCResult<()> {
+        require!(
+            !self.global_op_is_ongoing().get(),
+            "Global operation ongoing"
+        );
+        Ok(())
+    }
+
+    fn require_global_op_ongoing(&self) -> SCResult<()> {
+        require!(
+            self.global_op_is_ongoing().get(),
+            "Global operation not ongoing"
+        );
+        Ok(())
+    }
 }

@@ -1,12 +1,12 @@
 [package]
-name = "sc_distribution_rs-abi"
+name = "sc-locked-rewards-abi"
 
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
 publish = false
 
-[dependencies.sc_distribution_rs]
+[dependencies.sc-locked-rewards]
 path = ".."
 
 [dependencies.elrond-wasm]

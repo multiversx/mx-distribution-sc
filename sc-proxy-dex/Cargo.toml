@@ -1,5 +1,5 @@
 [package]
-name = "sc_distribution_rs"
+name = "sc-proxy-dex"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
@@ -12,8 +12,8 @@ path = "src/lib.rs"
 wasm-output-mode = [ "elrond-wasm-node",]
 
 [dependencies.elrond-wasm]
-path = "../../elrond-wasm-rs/elrond-wasm"
 version = "0.15"
+path = "../../elrond-wasm-rs/elrond-wasm"
 
 [dependencies.elrond-wasm-derive]
 version = "0.15"
@@ -30,7 +30,15 @@ path = "../common/distrib-common"
 [dependencies.modules]
 path = "../common/modules"
 
+[dependencies.dex-common]
+path = "../../sc-dex-rs/common/dex-common"
+
+[dependencies.elrond_dex_pair]
+path = "../../sc-dex-rs/elrond_dex_pair"
+
+[dependencies.elrond_dex_farm]
+path = "../../sc-dex-rs/elrond_dex_farm"
+
 [dev-dependencies.elrond-wasm-debug]
 version = "0.15"
 path = "../../elrond-wasm-rs/elrond-wasm-debug"
-

@@ -7,45 +7,65 @@ type Nonce = u64;
 type Epoch = u64;
 
 use distrib_common::*;
-use modules::*;
 use elrond_wasm::{require, sc_error};
+use modules::*;
 
+const ADDITIONAL_AMOUNT_TO_CREATE: u64 = 1;
 const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
+const ADD_QUANTITY_GAS_LIMIT: u64 = 5000000;
 
 #[elrond_wasm_derive::module]
 pub trait LockedAssetModule: asset::AssetModule {
     fn create_and_send_locked_assets(
         &self,
         amount: &Self::BigUint,
-        unlock_milestones: &[UnlockMilestone],
+        attributes: &LockedTokenAttributes,
+        address: &Address,
+    ) -> Nonce {
+        let token_id = self.locked_asset_token_id().get();
+        self.create_tokens(&token_id, amount, attributes);
+        let last_created_nonce = self.locked_asset_token_nonce().get();
+        self.send()
+            .transfer_tokens(&token_id, last_created_nonce, amount, address);
+        last_created_nonce
+    }
+
+    fn add_quantity_and_send_locked_assets(
+        &self,
+        amount: &Self::BigUint,
+        sft_nonce: Nonce,
         address: &Address,
     ) {
-        if amount > &0 {
-            let token_id = self.locked_asset_token_id().get();
-            self.create_tokens(&token_id, &amount, unlock_milestones);
-            let last_created_nonce = self.locked_asset_token_nonce().get();
-            self.send()
-                .transfer_tokens(&token_id, last_created_nonce, &amount, &address);
-        }
+        let token_id = self.locked_asset_token_id().get();
+        self.add_quantity(&token_id, sft_nonce, amount);
+        self.send()
+            .transfer_tokens(&token_id, sft_nonce, amount, address);
+    }
+
+    fn add_quantity(&self, token: &TokenIdentifier, nonce: Nonce, amount: &Self::BigUint) {
+        self.send().esdt_nft_add_quantity(
+            ADD_QUANTITY_GAS_LIMIT,
+            token.as_esdt_identifier(),
+            nonce,
+            amount,
+        );
     }
 
     fn create_tokens(
         &self,
         token: &TokenIdentifier,
         amount: &Self::BigUint,
-        unlock_milestones: &[UnlockMilestone],
+        attributes: &LockedTokenAttributes,
     ) {
-        let attributes = LockedTokenAttributes {
-            unlock_milestones: unlock_milestones.to_vec(),
-        };
+        let amount_to_create = amount + &Self::BigUint::from(ADDITIONAL_AMOUNT_TO_CREATE);
         self.send().esdt_nft_create::<LockedTokenAttributes>(
             self.blockchain().get_gas_left(),
             token.as_esdt_identifier(),
-            amount,
+            &amount_to_create,
             &BoxedBytes::empty(),
             &Self::BigUint::zero(),
             &H256::zero(),
-            &attributes,
+            attributes,
             &[BoxedBytes::empty()],
         );
         self.increase_nonce();
@@ -76,7 +96,10 @@ pub trait LockedAssetModule: asset::AssetModule {
     fn unlockAssets(&self) -> SCResult<()> {
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
-        require!(token_id == self.locked_asset_token_id().get(), "Bad payment token");
+        require!(
+            token_id == self.locked_asset_token_id().get(),
+            "Bad payment token"
+        );
 
         let attributes = self.get_attributes(&token_id, token_nonce)?;
         let current_block_epoch = self.blockchain().get_block_epoch();
@@ -91,11 +114,10 @@ pub trait LockedAssetModule: asset::AssetModule {
         let new_unlock_milestones =
             self.create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
         let locked_remaining = amount.clone() - unlock_amount;
-        self.create_and_send_locked_assets(
-            &locked_remaining,
-            &new_unlock_milestones,
-            &caller,
-        );
+        let attributes = LockedTokenAttributes {
+            unlock_milestones: new_unlock_milestones,
+        };
+        self.create_and_send_locked_assets(&locked_remaining, &attributes, &caller);
 
         self.send()
             .burn_tokens(&token_id, token_nonce, &amount, BURN_TOKENS_GAS_LIMIT);

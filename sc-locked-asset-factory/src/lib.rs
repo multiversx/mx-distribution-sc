@@ -7,10 +7,13 @@ elrond_wasm::derive_imports!();
 use distrib_common::*;
 use modules::*;
 
+mod cache;
 mod locked_asset;
 
 #[elrond_wasm_derive::contract]
-pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModule {
+pub trait LockedAssetFactory:
+    asset::AssetModule + locked_asset::LockedAssetModule + cache::CacheModule
+{
     #[init]
     fn init(
         &self,
@@ -51,11 +54,20 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
         require!(!self.locked_asset_token_id().is_empty(), "No SFT issued");
         require!(amount > 0, "Zero input amount");
 
-        self.create_and_send_locked_assets(
-            &amount,
-            &self.create_default_unlock_milestones(),
-            &address,
-        );
+        let attributes = LockedTokenAttributes {
+            unlock_milestones: self.create_default_unlock_milestones(),
+        };
+        let result = self.get_cached_sft_nonce_for_attributes(&attributes);
+        match result {
+            Option::Some(cached_nonce) => {
+                self.add_quantity_and_send_locked_assets(&amount, cached_nonce, &address);
+            }
+            Option::None => {
+                let new_nonce = self.create_and_send_locked_assets(&amount, &attributes, &address);
+                self.cache_attributes_and_nonce(attributes, new_nonce);
+            }
+        }
+
         Ok(())
     }
 
@@ -75,8 +87,20 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
         require!(amount > 0, "Zero input amount");
         require!(!schedule.is_empty(), "Empty param");
 
-        self.validate_unlock_milestones(&schedule)?;
-        self.create_and_send_locked_assets(&amount, &schedule.0, &address);
+        let attributes = LockedTokenAttributes {
+            unlock_milestones: schedule.0,
+        };
+        let result = self.get_cached_sft_nonce_for_attributes(&attributes);
+        match result {
+            Option::Some(cached_nonce) => {
+                self.add_quantity_and_send_locked_assets(&amount, cached_nonce, &address);
+            }
+            Option::None => {
+                let new_nonce = self.create_and_send_locked_assets(&amount, &attributes, &address);
+                self.cache_attributes_and_nonce(attributes, new_nonce);
+            }
+        }
+
         Ok(())
     }
 

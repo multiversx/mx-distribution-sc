@@ -18,8 +18,9 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
         #[var_args] default_unlock_period: VarArgs<UnlockMilestone>,
     ) -> SCResult<()> {
         require!(!default_unlock_period.is_empty(), "Empty param");
-        self.asset_token_id().set(&asset_token_id);
         self.validate_unlock_milestones(&default_unlock_period)?;
+
+        self.asset_token_id().set(&asset_token_id);
         self.default_unlock_period().set(&default_unlock_period.0);
         Ok(())
     }
@@ -27,6 +28,7 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
     #[endpoint]
     fn whitelist(&self, address: Address) -> SCResult<()> {
         only_owner!(self, "Permission denied");
+
         self.whitelisted_contracts().insert(address);
         Ok(())
     }
@@ -34,6 +36,7 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
     #[endpoint(removeWhitelist)]
     fn remove_whitelist(&self, address: Address) -> SCResult<()> {
         only_owner!(self, "Permission denied");
+
         self.whitelisted_contracts().remove(&address);
         Ok(())
     }
@@ -47,6 +50,7 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
         );
         require!(!self.locked_asset_token_id().is_empty(), "No SFT issued");
         require!(amount > 0, "Zero input amount");
+
         self.create_and_send_locked_assets(
             &amount,
             &self.create_default_unlock_milestones(),
@@ -70,6 +74,7 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
         require!(!self.locked_asset_token_id().is_empty(), "No SFT issued");
         require!(amount > 0, "Zero input amount");
         require!(!schedule.is_empty(), "Empty param");
+
         self.validate_unlock_milestones(&schedule)?;
         self.create_and_send_locked_assets(&amount, &schedule.0, &address);
         Ok(())
@@ -136,6 +141,7 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
         only_owner!(self, "Permission denied");
         require!(token == self.locked_asset_token_id().get(), "Bad token id");
         require!(!roles.is_empty(), "Empty roles");
+
         Ok(ESDTSystemSmartContractProxy::new_proxy_obj(self.send())
             .set_special_roles(&address, token.as_esdt_identifier(), &roles.as_slice())
             .async_call())
@@ -143,6 +149,7 @@ pub trait LockedAssetFactory: asset::AssetModule + locked_asset::LockedAssetModu
 
     fn create_default_unlock_milestones(&self) -> Vec<UnlockMilestone> {
         let current_epoch = self.blockchain().get_block_epoch();
+
         self.default_unlock_period()
             .get()
             .iter()

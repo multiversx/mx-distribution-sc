@@ -119,6 +119,7 @@ pub trait LockedAssetModule: asset::AssetModule {
         unlock_milestones: &[UnlockMilestone],
     ) -> u8 {
         let mut unlock_percent = 0u8;
+
         for milestone in unlock_milestones {
             if milestone.unlock_epoch < current_epoch {
                 unlock_percent += milestone.unlock_percent;
@@ -135,9 +136,11 @@ pub trait LockedAssetModule: asset::AssetModule {
         let mut new_unlock_milestones = Vec::<UnlockMilestone>::new();
         let unlock_percent = self.get_unlock_percent(current_epoch, old_unlock_milestones);
         let unlock_percent_remaining = 100u64 - (unlock_percent as u64);
+
         if unlock_percent_remaining == 0 {
             return new_unlock_milestones;
         }
+
         for old_milestone in old_unlock_milestones.iter() {
             if old_milestone.unlock_epoch >= current_epoch {
                 let new_unlock_percent: u64 =
@@ -149,6 +152,7 @@ pub trait LockedAssetModule: asset::AssetModule {
             }
         }
         let mut sum_of_new_percents = 0u8;
+
         for new_milestone in new_unlock_milestones.iter() {
             sum_of_new_percents += new_milestone.unlock_percent;
         }
@@ -168,6 +172,7 @@ pub trait LockedAssetModule: asset::AssetModule {
     ) -> SCResult<()> {
         let mut percents_sum: u8 = 0;
         let mut last_milestone_unlock_epoch: u64 = 0;
+
         for milestone in unlock_milestones.0.clone() {
             require!(
                 milestone.unlock_epoch > last_milestone_unlock_epoch,
@@ -180,6 +185,7 @@ pub trait LockedAssetModule: asset::AssetModule {
             last_milestone_unlock_epoch = milestone.unlock_epoch;
             percents_sum += milestone.unlock_percent;
         }
+
         if !unlock_milestones.is_empty() {
             require!(percents_sum == 100, "Percents do not sum up to 100");
         }

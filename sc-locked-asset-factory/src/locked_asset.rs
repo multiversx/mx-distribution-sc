@@ -71,6 +71,7 @@ pub trait LockedAssetModule: asset::AssetModule {
         }
     }
 
+    #[payable("*")]
     #[endpoint]
     fn unlockAssets(&self) -> SCResult<()> {
         let (amount, token_id) = self.call_value().payment_token_pair();

@@ -1,5 +1,5 @@
 [package]
-name = "sc-locked-rewards-wasm"
+name = "sc-locked-asset-factory-wasm"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
@@ -20,12 +20,11 @@ lto = true
 debug = false
 panic = "abort"
 
-[dependencies.sc-locked-rewards]
+[dependencies.sc-locked-asset-factory]
 features = [ "wasm-output-mode",]
 default-features = false
 path = ".."
 
 [dependencies.elrond-wasm-output]
-version = "0.15"
+version = "0.16"
 features = [ "wasm-output-mode",]
-path = "../../../elrond-wasm-rs/elrond-wasm-output"

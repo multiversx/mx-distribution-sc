@@ -4,7 +4,7 @@ elrond_wasm::derive_imports!();
 const MINT_TOKENS_GAS_LIMIT: u64 = 5000000;
 
 #[elrond_wasm_derive::module]
-pub trait AssetModuleImpl {
+pub trait AssetModule {
     fn mint_and_send_assets(&self, address: &Address, amount: &Self::BigUint) {
         if amount > &0 {
             let token_id = self.asset_token_id().get();

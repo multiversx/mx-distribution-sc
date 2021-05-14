@@ -1,5 +1,5 @@
 [package]
-name = "sc-locked-rewards"
+name = "sc-locked-asset-factory"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
@@ -12,17 +12,14 @@ path = "src/lib.rs"
 wasm-output-mode = [ "elrond-wasm-node",]
 
 [dependencies.elrond-wasm]
-version = "0.15"
-path = "../../elrond-wasm-rs/elrond-wasm"
+version = "0.16"
 
 [dependencies.elrond-wasm-derive]
-version = "0.15"
-path = "../../elrond-wasm-rs/elrond-wasm-derive"
+version = "0.16"
 
 [dependencies.elrond-wasm-node]
-version = "0.15"
+version = "0.16"
 optional = true
-path = "../../elrond-wasm-rs/elrond-wasm-node"
 
 [dependencies.distrib-common]
 path = "../common/distrib-common"
@@ -31,5 +28,4 @@ path = "../common/distrib-common"
 path = "../common/modules"
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.15"
-path = "../../elrond-wasm-rs/elrond-wasm-debug"
+version = "0.16"

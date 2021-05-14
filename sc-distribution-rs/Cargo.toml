@@ -12,17 +12,14 @@ path = "src/lib.rs"
 wasm-output-mode = [ "elrond-wasm-node",]
 
 [dependencies.elrond-wasm]
-path = "../../elrond-wasm-rs/elrond-wasm"
-version = "0.15"
+version = "0.16"
 
 [dependencies.elrond-wasm-derive]
-version = "0.15"
-path = "../../elrond-wasm-rs/elrond-wasm-derive"
+version = "0.16"
 
 [dependencies.elrond-wasm-node]
-version = "0.15"
+version = "0.16"
 optional = true
-path = "../../elrond-wasm-rs/elrond-wasm-node"
 
 [dependencies.distrib-common]
 path = "../common/distrib-common"
@@ -34,6 +31,5 @@ path = "../common/modules"
 path = "../sc-locked-asset-factory"
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.15"
-path = "../../elrond-wasm-rs/elrond-wasm-debug"
+version = "0.16"
 

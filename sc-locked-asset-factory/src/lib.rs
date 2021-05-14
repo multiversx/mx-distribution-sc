@@ -54,20 +54,7 @@ pub trait LockedAssetFactory:
         require!(!self.locked_asset_token_id().is_empty(), "No SFT issued");
         require!(amount > 0, "Zero input amount");
 
-        let attributes = LockedTokenAttributes {
-            unlock_milestones: self.create_default_unlock_milestones(),
-        };
-        let result = self.get_cached_sft_nonce_for_attributes(&attributes);
-        match result {
-            Option::Some(cached_nonce) => {
-                self.add_quantity_and_send_locked_assets(&amount, cached_nonce, &address);
-            }
-            Option::None => {
-                let new_nonce = self.create_and_send_locked_assets(&amount, &attributes, &address);
-                self.cache_attributes_and_nonce(attributes, new_nonce);
-            }
-        }
-
+        self.produce_tokens_and_send(&amount, &self.create_default_unlock_milestones(), &address);
         Ok(())
     }
 
@@ -87,8 +74,47 @@ pub trait LockedAssetFactory:
         require!(amount > 0, "Zero input amount");
         require!(!schedule.is_empty(), "Empty param");
 
+        self.produce_tokens_and_send(&amount, &schedule.0, &address);
+        Ok(())
+    }
+
+    #[payable("*")]
+    #[endpoint]
+    fn unlockAssets(&self) -> SCResult<()> {
+        let (amount, token_id) = self.call_value().payment_token_pair();
+        let token_nonce = self.call_value().esdt_token_nonce();
+        let locked_token_id = self.locked_asset_token_id().get();
+        require!(token_id == locked_token_id, "Bad payment token");
+
+        let attributes = self.get_attributes(&token_id, token_nonce)?;
+        let current_block_epoch = self.blockchain().get_block_epoch();
+        let unlock_amount =
+            self.get_unlock_amount(&amount, current_block_epoch, &attributes.unlock_milestones);
+        require!(amount >= unlock_amount, "Cannot unlock more than locked");
+        require!(unlock_amount > 0, "Method called too soon");
+
+        let caller = self.blockchain().get_caller();
+        self.mint_and_send_assets(&caller, &unlock_amount);
+
+        let locked_remaining = amount.clone() - unlock_amount;
+        if locked_remaining > 0 {
+            let new_unlock_milestones = self
+                .create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
+            self.produce_tokens_and_send(&locked_remaining, &new_unlock_milestones, &caller);
+        }
+
+        self.burn_locked_assets(&locked_token_id, &amount, token_nonce);
+        Ok(())
+    }
+
+    fn produce_tokens_and_send(
+        &self,
+        amount: &Self::BigUint,
+        unlock_milestones: &[UnlockMilestone],
+        address: &Address,
+    ) {
         let attributes = LockedTokenAttributes {
-            unlock_milestones: schedule.0,
+            unlock_milestones: unlock_milestones.to_vec(),
         };
         let result = self.get_cached_sft_nonce_for_attributes(&attributes);
         match result {
@@ -100,8 +126,6 @@ pub trait LockedAssetFactory:
                 self.cache_attributes_and_nonce(attributes, new_nonce);
             }
         }
-
-        Ok(())
     }
 
     #[payable("EGLD")]

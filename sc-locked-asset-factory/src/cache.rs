@@ -6,14 +6,15 @@ elrond_wasm::derive_imports!();
 type Nonce = u64;
 type Epoch = u64;
 
+use super::locked_asset;
 use distrib_common::*;
+use modules::*;
 
 const AMOUNT_TO_BURN: u64 = 1;
 const GAS_LEFT_THRESHOLD: u64 = 5000000;
-const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
 #[elrond_wasm_derive::module]
-pub trait CacheModule {
+pub trait CacheModule: asset::AssetModule + locked_asset::LockedAssetModule {
     fn get_cached_sft_nonce_for_attributes(
         &self,
         attributes: &LockedTokenAttributes,
@@ -40,25 +41,28 @@ pub trait CacheModule {
     }
 
     #[endpoint(cleanupUnusedTokens)]
-    fn cleanup_unused_tokens(&self, locked_asset_token_id: TokenIdentifier) -> SCResult<u64> {
+    fn cleanup_unused_tokens(&self) -> SCResult<u64> {
         only_owner!(self, "Permission denied");
         let last_burned_sft_nonce_initial = self.last_burned_sft_nonce().get();
-        let first_cached_sft_nonce = self.first_cached_sft_nonce().get();
+        let locked_asset_token_id = self.locked_asset_token_id().get();
         let mut last_burned_sft_nonce = last_burned_sft_nonce_initial;
         let amount_to_burn = Self::BigUint::from(AMOUNT_TO_BURN);
+        let current_epoch = self.blockchain().get_block_epoch();
+        let cache_epoch = self.cache_epoch().get();
 
-        for nonce in last_burned_sft_nonce + 1..first_cached_sft_nonce {
+        let limit_nonce_to_burn = if cache_epoch == current_epoch {
+            self.first_cached_sft_nonce().get()
+        } else {
+            self.locked_asset_token_nonce().get() + 1
+        };
+
+        for nonce in last_burned_sft_nonce + 1..limit_nonce_to_burn {
             let gas_left = self.blockchain().get_gas_left();
 
             if gas_left < GAS_LEFT_THRESHOLD {
                 break;
             }
-            self.send().esdt_nft_burn(
-                BURN_TOKENS_GAS_LIMIT,
-                locked_asset_token_id.as_esdt_identifier(),
-                nonce,
-                &amount_to_burn,
-            );
+            self.burn_locked_assets(&locked_asset_token_id, &amount_to_burn, nonce);
             last_burned_sft_nonce = nonce;
         }
 

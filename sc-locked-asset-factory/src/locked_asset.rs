@@ -71,6 +71,11 @@ pub trait LockedAssetModule: asset::AssetModule {
         self.increase_nonce();
     }
 
+    fn burn_locked_assets(&self, token_id: &TokenIdentifier, amount: &Self::BigUint, nonce: Nonce) {
+        self.send()
+            .burn_tokens(token_id, nonce, amount, BURN_TOKENS_GAS_LIMIT);
+    }
+
     fn get_attributes(
         &self,
         token_id: &TokenIdentifier,
@@ -89,41 +94,6 @@ pub trait LockedAssetModule: asset::AssetModule {
                 return sc_error!("Decoding error");
             }
         }
-    }
-
-    #[payable("*")]
-    #[endpoint]
-    fn unlockAssets(&self) -> SCResult<()> {
-        let (amount, token_id) = self.call_value().payment_token_pair();
-        let token_nonce = self.call_value().esdt_token_nonce();
-        require!(
-            token_id == self.locked_asset_token_id().get(),
-            "Bad payment token"
-        );
-
-        let attributes = self.get_attributes(&token_id, token_nonce)?;
-        let current_block_epoch = self.blockchain().get_block_epoch();
-        let unlock_amount =
-            self.get_unlock_amount(&amount, current_block_epoch, &attributes.unlock_milestones);
-        require!(amount >= unlock_amount, "Cannot unlock more than locked");
-        require!(unlock_amount > 0, "Method called too soon");
-
-        let caller = self.blockchain().get_caller();
-        self.mint_and_send_assets(&caller, &unlock_amount);
-
-        let locked_remaining = amount.clone() - unlock_amount;
-        if locked_remaining > 0 {
-            let new_unlock_milestones =
-                self.create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
-            let attributes = LockedTokenAttributes {
-                unlock_milestones: new_unlock_milestones,
-            };
-            self.create_and_send_locked_assets(&locked_remaining, &attributes, &caller);
-        }
-
-        self.send()
-            .burn_tokens(&token_id, token_nonce, &amount, BURN_TOKENS_GAS_LIMIT);
-        Ok(())
     }
 
     fn get_unlock_amount(

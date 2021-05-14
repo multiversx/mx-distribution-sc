@@ -4,18 +4,16 @@ elrond_wasm::derive_imports!();
 type Nonce = u64;
 type Epoch = u64;
 pub use crate::asset::*;
-pub use crate::global_op::*;
 
 use distrib_common::*;
 use elrond_wasm::{require, sc_error, sc_try};
+
+const BURN_TOKENS_GAS_LIMIT: u64 = 5000000;
 
 #[elrond_wasm_derive::module(LockedAssetModuleImpl)]
 pub trait LockedAssetModule {
     #[module(AssetModuleImpl)]
     fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
-
-    #[module(GlobalOperationModuleImpl)]
-    fn global_operation(&self) -> GlobalOperationModuleImpl<T, BigInt, BigUint>;
 
     fn create_and_send_multiple(
         &self,
@@ -39,8 +37,9 @@ pub trait LockedAssetModule {
     ) {
         if amount > &0 {
             self.create_tokens(&token_id, &amount, unlock_milestones);
-            let current_nonce = self.token_nonce().get();
-            self.send_tokens(&token_id, current_nonce, &amount, &caller);
+            let last_created_nonce = self.token_nonce().get();
+            self.send()
+                .transfer_tokens(&token_id, last_created_nonce, &amount, &caller);
         }
     }
 
@@ -63,33 +62,7 @@ pub trait LockedAssetModule {
             &attributes,
             &[BoxedBytes::empty()],
         );
-
         self.increase_nonce();
-    }
-
-    fn burn_tokens(&self, token: &TokenIdentifier, nonce: Nonce, amount: &BigUint) {
-        self.send().esdt_nft_burn(
-            self.blockchain().get_gas_left(),
-            token.as_esdt_identifier(),
-            nonce,
-            amount,
-        );
-    }
-
-    fn send_tokens(
-        &self,
-        token_id: &TokenIdentifier,
-        nonce: Nonce,
-        amount: &BigUint,
-        address: &Address,
-    ) {
-        let _ = self.send().direct_esdt_nft_via_transfer_exec(
-            address,
-            token_id.as_esdt_identifier(),
-            nonce,
-            &amount,
-            &[],
-        );
     }
 
     fn get_attributes(
@@ -115,10 +88,6 @@ pub trait LockedAssetModule {
     #[payable("*")]
     #[endpoint(unlockAssets)]
     fn unlock_assets(&self) -> SCResult<()> {
-        require!(
-            !self.global_operation().is_ongoing().get(),
-            "Global operation is ongoing"
-        );
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
         require!(token_id == self.token_id().get(), "Bad payment token");
@@ -143,7 +112,8 @@ pub trait LockedAssetModule {
             &new_unlock_milestones,
         );
 
-        self.burn_tokens(&token_id, token_nonce, &amount);
+        self.send()
+            .burn_tokens(&token_id, token_nonce, &amount, BURN_TOKENS_GAS_LIMIT);
         Ok(())
     }
 

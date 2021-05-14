@@ -3,8 +3,8 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-use modules::*;
 use distrib_common::*;
+use modules::*;
 
 const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
@@ -23,16 +23,21 @@ pub trait EsdtDistribution {
     #[module(ProxyPairModuleImpl)]
     fn proxy_pair(&self) -> ProxyPairModuleImpl<T, BigInt, BigUint>;
 
+    #[module(ProxyFarmModuleImpl)]
+    fn proxy_farm(&self) -> ProxyFarmModuleImpl<T, BigInt, BigUint>;
+
     #[init]
     fn init(
         &self,
         asset_token_id: TokenIdentifier,
         locked_token_id: TokenIdentifier,
         wrapped_lp_token_id: TokenIdentifier,
+        wrapped_farm_token_id: TokenIdentifier,
     ) {
         self.asset().token_id().set(&asset_token_id);
         self.locked_asset().token_id().set(&locked_token_id);
         self.proxy_pair().token_id().set(&wrapped_lp_token_id);
+        self.proxy_farm().token_id().set(&wrapped_farm_token_id);
     }
 
     #[endpoint(startGlobalOperation)]
@@ -57,7 +62,7 @@ pub trait EsdtDistribution {
         #[var_args] unlock_milestones: VarArgs<UnlockMilestone>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.global_operation().require_ongoing());
         require!(
             spread_epoch >= self.blockchain().get_block_epoch(),
             "Spread epoch in the past"
@@ -88,7 +93,7 @@ pub trait EsdtDistribution {
         #[var_args] user_assets: VarArgs<MultiArg2<Address, BigUint>>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.global_operation().require_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         require!(!user_assets.is_empty(), "Empty assets vec");
         self.add_all_user_assets_to_map(spread_epoch, user_assets, false)
@@ -101,7 +106,7 @@ pub trait EsdtDistribution {
         #[var_args] user_assets: VarArgs<MultiArg2<Address, BigUint>>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.global_operation().require_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         require!(
             !self
@@ -118,7 +123,7 @@ pub trait EsdtDistribution {
 
     #[endpoint(claimAssets)]
     fn claim_assets(&self) -> SCResult<BigUint> {
-        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         let caller = self.blockchain().get_caller();
         let (assets_amounts, _) = self.calculate_user_assets(&caller, false, true);
@@ -129,7 +134,7 @@ pub trait EsdtDistribution {
 
     #[endpoint(claimLockedAssets)]
     fn claim_locked_assets(&self) -> SCResult<BigUint> {
-        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         let caller = self.blockchain().get_caller();
         let (assets_amounts, unlock_milestones_vec) =
@@ -152,7 +157,7 @@ pub trait EsdtDistribution {
     #[endpoint(undoLastCommunityDistribution)]
     fn undo_last_community_distrib(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.global_operation().require_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         self.community_distribution_list().pop_front();
         Ok(())
@@ -161,7 +166,7 @@ pub trait EsdtDistribution {
     #[endpoint(undoUserDistributedAssetsBetweenEpochs)]
     fn undo_user_assets_between_epochs(&self, lower: u64, higher: u64) -> SCResult<usize> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.require_global_operation_ongoing());
+        sc_try!(self.global_operation().require_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         require!(lower <= higher, "Bad input values");
         Ok(self.remove_asset_entries_between_epochs(lower, higher))
@@ -169,7 +174,7 @@ pub trait EsdtDistribution {
 
     #[view(calculateAssets)]
     fn calculate_assets_view(&self, address: Address) -> SCResult<BigUint> {
-        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         let (assets_amounts, _) = self.calculate_user_assets(&address, false, false);
         let cummulated_amount = self.sum_of(&assets_amounts);
@@ -178,7 +183,7 @@ pub trait EsdtDistribution {
 
     #[view(calculateLockedAssets)]
     fn calculate_locked_assets_view(&self, address: Address) -> SCResult<BigUint> {
-        sc_try!(self.require_global_operation_not_ongoing());
+        sc_try!(self.global_operation().require_not_ongoing());
         sc_try!(self.require_community_distribution_list_not_empty());
         let (assets_amounts, _) = self.calculate_user_assets(&address, true, false);
         let cummulated_amount = self.sum_of(&assets_amounts);
@@ -351,22 +356,6 @@ pub trait EsdtDistribution {
             self.user_asset_map().remove(&key);
         }
         to_remove_keys.len()
-    }
-
-    fn require_global_operation_ongoing(&self) -> SCResult<()> {
-        require!(
-            self.global_operation().is_ongoing().get(),
-            "Global Operation not ongoing"
-        );
-        Ok(())
-    }
-
-    fn require_global_operation_not_ongoing(&self) -> SCResult<()> {
-        require!(
-            !self.global_operation().is_ongoing().get(),
-            "Global Operation ongoing"
-        );
-        Ok(())
     }
 
     fn require_community_distribution_list_not_empty(&self) -> SCResult<()> {

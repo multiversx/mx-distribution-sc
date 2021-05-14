@@ -111,13 +111,15 @@ pub trait LockedAssetModule: asset::AssetModule {
         let caller = self.blockchain().get_caller();
         self.mint_and_send_assets(&caller, &unlock_amount);
 
-        let new_unlock_milestones =
-            self.create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
         let locked_remaining = amount.clone() - unlock_amount;
-        let attributes = LockedTokenAttributes {
-            unlock_milestones: new_unlock_milestones,
-        };
-        self.create_and_send_locked_assets(&locked_remaining, &attributes, &caller);
+        if locked_remaining > 0 {
+            let new_unlock_milestones =
+                self.create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
+            let attributes = LockedTokenAttributes {
+                unlock_milestones: new_unlock_milestones,
+            };
+            self.create_and_send_locked_assets(&locked_remaining, &attributes, &caller);
+        }
 
         self.send()
             .burn_tokens(&token_id, token_nonce, &amount, BURN_TOKENS_GAS_LIMIT);

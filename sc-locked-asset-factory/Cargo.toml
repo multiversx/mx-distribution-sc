@@ -1,5 +1,5 @@
 [package]
-name = "sc_distribution_rs"
+name = "sc-locked-asset-factory"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
@@ -27,9 +27,5 @@ path = "../common/distrib-common"
 [dependencies.modules]
 path = "../common/modules"
 
-[dependencies.sc-locked-asset-factory]
-path = "../sc-locked-asset-factory"
-
 [dev-dependencies.elrond-wasm-debug]
 version = "0.16"
-

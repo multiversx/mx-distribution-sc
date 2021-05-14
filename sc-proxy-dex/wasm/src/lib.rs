@@ -1,4 +1,4 @@
 #![no_std]
 
-pub use sc_dex_rewards_lock::*;
+pub use sc_proxy_dex::*;
 pub use elrond_wasm_output::*;

@@ -9,60 +9,44 @@ use modules::*;
 const GAS_CHECK_FREQUENCY: usize = 100;
 const MAX_CLAIMABLE_DISTRIBUTION_ROUNDS: usize = 4;
 
-#[elrond_wasm_derive::contract(EsdtDistributionImpl)]
-pub trait EsdtDistribution {
-    #[module(AssetModuleImpl)]
-    fn asset(&self) -> AssetModuleImpl<T, BigInt, BigUint>;
-
-    #[module(LockedAssetModuleImpl)]
-    fn locked_asset(&self) -> LockedAssetModuleImpl<T, BigInt, BigUint>;
-
-    #[module(GlobalOperationModuleImpl)]
-    fn global_operation(&self) -> GlobalOperationModuleImpl<T, BigInt, BigUint>;
-
-    #[module(ProxyPairModuleImpl)]
-    fn proxy_pair(&self) -> ProxyPairModuleImpl<T, BigInt, BigUint>;
-
-    #[module(ProxyFarmModuleImpl)]
-    fn proxy_farm(&self) -> ProxyFarmModuleImpl<T, BigInt, BigUint>;
+#[elrond_wasm_derive::contract]
+pub trait EsdtDistribution: asset::AssetModule + global_op::GlobalOperationModule {
+    #[proxy]
+    fn locked_asset_factory_proxy(
+        &self,
+        to: Address,
+    ) -> sc_locked_asset_factory::Proxy<Self::SendApi>;
 
     #[init]
-    fn init(
-        &self,
-        asset_token_id: TokenIdentifier,
-        locked_token_id: TokenIdentifier,
-        wrapped_lp_token_id: TokenIdentifier,
-        wrapped_farm_token_id: TokenIdentifier,
-    ) {
-        self.asset().token_id().set(&asset_token_id);
-        self.locked_asset().token_id().set(&locked_token_id);
-        self.proxy_pair().token_id().set(&wrapped_lp_token_id);
-        self.proxy_farm().token_id().set(&wrapped_farm_token_id);
+    fn init(&self, asset_token_id: TokenIdentifier, locked_asset_factory_address: Address) {
+        self.asset_token_id().set(&asset_token_id);
+        self.locked_asset_factory_address()
+            .set(&locked_asset_factory_address);
     }
 
     #[endpoint(startGlobalOperation)]
     fn start_planning(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        self.global_operation().start();
+        self.global_op_start();
         Ok(())
     }
 
     #[endpoint(endGlobalOperation)]
     fn end_planning(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        self.global_operation().stop();
+        self.global_op_stop();
         Ok(())
     }
 
     #[endpoint(setCommunityDistribution)]
     fn set_community_distrib(
         &self,
-        total_amount: BigUint,
+        total_amount: Self::BigUint,
         spread_epoch: u64,
         #[var_args] unlock_milestones: VarArgs<UnlockMilestone>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.global_operation().require_ongoing());
+        self.require_global_op_ongoing()?;
         require!(
             spread_epoch >= self.blockchain().get_block_epoch(),
             "Spread epoch in the past"
@@ -75,7 +59,7 @@ pub trait EsdtDistribution {
                 < spread_epoch,
             "Community distribution should be added in chronological order"
         );
-        sc_try!(self.validate_unlock_milestones(&unlock_milestones));
+        self.validate_unlock_milestones(&unlock_milestones)?;
         let distrib = CommunityDistribution {
             total_amount: total_amount.clone(),
             spread_epoch,
@@ -86,15 +70,40 @@ pub trait EsdtDistribution {
         Ok(())
     }
 
+    //Currently duplicated function.
+    fn validate_unlock_milestones(
+        &self,
+        unlock_milestones: &VarArgs<UnlockMilestone>,
+    ) -> SCResult<()> {
+        let mut percents_sum: u8 = 0;
+        let mut last_milestone_unlock_epoch: u64 = 0;
+        for milestone in unlock_milestones.0.clone() {
+            require!(
+                milestone.unlock_epoch > last_milestone_unlock_epoch,
+                "Unlock epochs not in order"
+            );
+            require!(
+                milestone.unlock_percent <= 100,
+                "Unlock percent more than 100"
+            );
+            last_milestone_unlock_epoch = milestone.unlock_epoch;
+            percents_sum += milestone.unlock_percent;
+        }
+        if !unlock_milestones.is_empty() {
+            require!(percents_sum == 100, "Percents do not sum up to 100");
+        }
+        Ok(())
+    }
+
     #[endpoint(setPerUserDistributedAssets)]
     fn set_per_user_distributed_assets(
         &self,
         spread_epoch: u64,
-        #[var_args] user_assets: VarArgs<MultiArg2<Address, BigUint>>,
+        #[var_args] user_assets: VarArgs<MultiArg2<Address, Self::BigUint>>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.global_operation().require_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         require!(!user_assets.is_empty(), "Empty assets vec");
         self.add_all_user_assets_to_map(spread_epoch, user_assets, false)
     }
@@ -103,11 +112,11 @@ pub trait EsdtDistribution {
     fn set_per_user_distributed_locked_assets(
         &self,
         spread_epoch: u64,
-        #[var_args] user_assets: VarArgs<MultiArg2<Address, BigUint>>,
+        #[var_args] user_assets: VarArgs<MultiArg2<Address, Self::BigUint>>,
     ) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.global_operation().require_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         require!(
             !self
                 .community_distribution_list()
@@ -122,28 +131,37 @@ pub trait EsdtDistribution {
     }
 
     #[endpoint(claimAssets)]
-    fn claim_assets(&self) -> SCResult<BigUint> {
-        sc_try!(self.global_operation().require_not_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+    fn claim_assets(&self) -> SCResult<Self::BigUint> {
+        self.require_global_op_not_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         let caller = self.blockchain().get_caller();
         let (assets_amounts, _) = self.calculate_user_assets(&caller, false, true);
         let cummulated_amount = self.sum_of(&assets_amounts);
-        self.asset().mint_and_send(&caller, &cummulated_amount);
+        self.mint_and_send_assets(&caller, &cummulated_amount);
         Ok(cummulated_amount)
     }
 
     #[endpoint(claimLockedAssets)]
-    fn claim_locked_assets(&self) -> SCResult<BigUint> {
-        sc_try!(self.global_operation().require_not_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+    fn claim_locked_assets(&self) -> SCResult<Self::BigUint> {
+        self.require_global_op_not_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         let caller = self.blockchain().get_caller();
         let (assets_amounts, unlock_milestones_vec) =
             self.calculate_user_assets(&caller, true, true);
-        sc_try!(self.locked_asset().create_and_send_multiple(
-            &caller,
-            &assets_amounts,
-            &unlock_milestones_vec
-        ));
+        let to = self.locked_asset_factory_address().get();
+        let gas_limit_per_execute =
+            self.blockchain().get_gas_left() / (assets_amounts.len() as u64 + 1);
+        for it in assets_amounts.iter().zip(unlock_milestones_vec) {
+            let (amount, unlock_milestones) = it;
+            self.locked_asset_factory_proxy(to.clone())
+                .createAndForwardCustomSchedule(
+                    amount.clone(),
+                    caller.clone(),
+                    MultiArgVec::from(unlock_milestones),
+                )
+                .execute_on_dest_context(gas_limit_per_execute);
+        }
+
         let cummulated_amount = self.sum_of(&assets_amounts);
         Ok(cummulated_amount)
     }
@@ -157,8 +175,8 @@ pub trait EsdtDistribution {
     #[endpoint(undoLastCommunityDistribution)]
     fn undo_last_community_distrib(&self) -> SCResult<()> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.global_operation().require_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         self.community_distribution_list().pop_front();
         Ok(())
     }
@@ -166,32 +184,32 @@ pub trait EsdtDistribution {
     #[endpoint(undoUserDistributedAssetsBetweenEpochs)]
     fn undo_user_assets_between_epochs(&self, lower: u64, higher: u64) -> SCResult<usize> {
         only_owner!(self, "Permission denied");
-        sc_try!(self.global_operation().require_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+        self.require_global_op_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         require!(lower <= higher, "Bad input values");
         Ok(self.remove_asset_entries_between_epochs(lower, higher))
     }
 
     #[view(calculateAssets)]
-    fn calculate_assets_view(&self, address: Address) -> SCResult<BigUint> {
-        sc_try!(self.global_operation().require_not_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+    fn calculate_assets_view(&self, address: Address) -> SCResult<Self::BigUint> {
+        self.require_global_op_not_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         let (assets_amounts, _) = self.calculate_user_assets(&address, false, false);
         let cummulated_amount = self.sum_of(&assets_amounts);
         Ok(cummulated_amount)
     }
 
     #[view(calculateLockedAssets)]
-    fn calculate_locked_assets_view(&self, address: Address) -> SCResult<BigUint> {
-        sc_try!(self.global_operation().require_not_ongoing());
-        sc_try!(self.require_community_distribution_list_not_empty());
+    fn calculate_locked_assets_view(&self, address: Address) -> SCResult<Self::BigUint> {
+        self.require_global_op_not_ongoing()?;
+        self.require_community_distribution_list_not_empty()?;
         let (assets_amounts, _) = self.calculate_user_assets(&address, true, false);
         let cummulated_amount = self.sum_of(&assets_amounts);
         Ok(cummulated_amount)
     }
 
     #[view(getLastCommunityDistributionAmountAndEpoch)]
-    fn get_last_community_distrib_amount_and_epoch(&self) -> MultiResult2<BigUint, u64> {
+    fn get_last_community_distrib_amount_and_epoch(&self) -> MultiResult2<Self::BigUint, u64> {
         self.community_distribution_list()
             .front()
             .map(|last_community_distrib| {
@@ -200,7 +218,7 @@ pub trait EsdtDistribution {
                     last_community_distrib.spread_epoch,
                 )
             })
-            .unwrap_or((BigUint::zero(), 0u64))
+            .unwrap_or((Self::BigUint::zero(), 0u64))
             .into()
     }
 
@@ -213,34 +231,10 @@ pub trait EsdtDistribution {
             .into()
     }
 
-    fn validate_unlock_milestones(
-        &self,
-        unlock_milestones: &VarArgs<UnlockMilestone>,
-    ) -> SCResult<()> {
-        let mut precents_sum: u8 = 0;
-        let mut last_milestone_unlock_epoch: u64 = 0;
-        for milestone in unlock_milestones.0.clone() {
-            require!(
-                milestone.unlock_epoch > last_milestone_unlock_epoch,
-                "Unlock epochs not in order"
-            );
-            require!(
-                milestone.unlock_precent <= 100,
-                "Unlock precent more than 100"
-            );
-            last_milestone_unlock_epoch = milestone.unlock_epoch;
-            precents_sum += milestone.unlock_precent;
-        }
-        if !unlock_milestones.is_empty() {
-            require!(precents_sum == 100, "Precents do not sum up to 100");
-        }
-        Ok(())
-    }
-
     fn add_all_user_assets_to_map(
         &self,
         spread_epoch: u64,
-        user_assets: VarArgs<MultiArg2<Address, BigUint>>,
+        user_assets: VarArgs<MultiArg2<Address, Self::BigUint>>,
         locked_assets: bool,
     ) -> SCResult<()> {
         let mut last_community_distrib = self.community_distribution_list().front().unwrap();
@@ -255,12 +249,7 @@ pub trait EsdtDistribution {
                 "User assets sums above community total assets"
             );
             last_community_distrib.after_planning_amount -= asset_amount.clone();
-            sc_try!(self.add_user_asset_entry(
-                user_address,
-                asset_amount,
-                spread_epoch,
-                locked_assets
-            ));
+            self.add_user_asset_entry(user_address, asset_amount, spread_epoch, locked_assets)?;
         }
         self.community_distribution_list().pop_front();
         self.community_distribution_list()
@@ -271,7 +260,7 @@ pub trait EsdtDistribution {
     fn add_user_asset_entry(
         &self,
         user_address: Address,
-        asset_amount: BigUint,
+        asset_amount: Self::BigUint,
         spread_epoch: u64,
         locked_asset: bool,
     ) -> SCResult<()> {
@@ -293,9 +282,9 @@ pub trait EsdtDistribution {
         address: &Address,
         locked_asset: bool,
         delete_after_visit: bool,
-    ) -> (Vec<BigUint>, Vec<Vec<UnlockMilestone>>) {
+    ) -> (Vec<Self::BigUint>, Vec<Vec<UnlockMilestone>>) {
         let current_epoch = self.blockchain().get_block_epoch();
-        let mut amounts = Vec::<BigUint>::new();
+        let mut amounts = Vec::<Self::BigUint>::new();
         let mut milestones = Vec::<Vec<UnlockMilestone>>::new();
 
         for community_distrib in self
@@ -366,8 +355,8 @@ pub trait EsdtDistribution {
         Ok(())
     }
 
-    fn sum_of(&self, vect: &[BigUint]) -> BigUint {
-        let mut sum = BigUint::zero();
+    fn sum_of(&self, vect: &[Self::BigUint]) -> Self::BigUint {
+        let mut sum = Self::BigUint::zero();
         for item in vect.iter() {
             sum += item;
         }
@@ -377,8 +366,11 @@ pub trait EsdtDistribution {
     #[storage_mapper("community_distribution_list")]
     fn community_distribution_list(
         &self,
-    ) -> LinkedListMapper<Self::Storage, CommunityDistribution<BigUint>>;
+    ) -> LinkedListMapper<Self::Storage, CommunityDistribution<Self::BigUint>>;
 
     #[storage_mapper("user_asset_map")]
-    fn user_asset_map(&self) -> MapMapper<Self::Storage, UserAssetKey, BigUint>;
+    fn user_asset_map(&self) -> MapMapper<Self::Storage, UserAssetKey, Self::BigUint>;
+
+    #[storage_mapper("locked_asset_factory_address")]
+    fn locked_asset_factory_address(&self) -> SingleValueMapper<Self::Storage, Address>;
 }

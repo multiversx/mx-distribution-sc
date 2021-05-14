@@ -1,5 +1,5 @@
 [package]
-name = "sc-dex-rewards-lock"
+name = "sc-proxy-dex"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
@@ -12,13 +12,13 @@ path = "src/lib.rs"
 wasm-output-mode = [ "elrond-wasm-node",]
 
 [dependencies.elrond-wasm]
-version = "0.15.0"
+version = "0.16"
 
 [dependencies.elrond-wasm-derive]
-version = "0.15.0"
+version = "0.16"
 
 [dependencies.elrond-wasm-node]
-version = "0.15.0"
+version = "0.16"
 optional = true
 
 [dependencies.distrib-common]
@@ -27,5 +27,14 @@ path = "../common/distrib-common"
 [dependencies.modules]
 path = "../common/modules"
 
+[dependencies.dex-common]
+path = "../../sc-dex-rs/common/dex-common"
+
+[dependencies.elrond_dex_pair]
+path = "../../sc-dex-rs/elrond_dex_pair"
+
+[dependencies.elrond_dex_farm]
+path = "../../sc-dex-rs/elrond_dex_farm"
+
 [dev-dependencies.elrond-wasm-debug]
-version = "0.15.0"
+version = "0.16"

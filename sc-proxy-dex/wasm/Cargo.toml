@@ -1,5 +1,5 @@
 [package]
-name = "sc_distribution_rs-wasm"
+name = "sc-proxy-dex-wasm"
 version = "0.0.0"
 authors = [ "you",]
 edition = "2018"
@@ -15,12 +15,12 @@ members = [ ".",]
 
 [profile.release]
 codegen-units = 1
-opt-level = "z"
+opt-level = "s"
 lto = true
 debug = false
 panic = "abort"
 
-[dependencies.sc_distribution_rs]
+[dependencies.sc-proxy-dex]
 features = [ "wasm-output-mode",]
 default-features = false
 path = ".."
@@ -28,4 +28,3 @@ path = ".."
 [dependencies.elrond-wasm-output]
 version = "0.16"
 features = [ "wasm-output-mode",]
-

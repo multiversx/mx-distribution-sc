@@ -68,8 +68,8 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
     }
 
     #[payable("*")]
-    #[endpoint(enterFarmWithLockedRewardsProxy)]
-    fn enter_farm_with_locked_rewards_proxy_endpoint(&self, farm_address: Address) -> SCResult<()> {
+    #[endpoint(enterFarmAndLockRewardsProxy)]
+    fn enter_farm_and_lock_rewards_proxy_endpoint(&self, farm_address: Address) -> SCResult<()> {
         self.enter_farm_proxy(farm_address, true)
     }
 
@@ -338,7 +338,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         );
         if with_locked_rewards {
             self.farm_contract_proxy(farm_address.clone())
-                .enterFarmWithLockedRewards(lp_token_id.clone(), amount.clone())
+                .enterFarmAndLockRewards(lp_token_id.clone(), amount.clone())
                 .execute_on_dest_context_custom_range(gas_limit, |_, after| (after-1, after))
         } else {
             self.farm_contract_proxy(farm_address.clone())

@@ -27,5 +27,8 @@ path = "../common/distrib-common"
 [dependencies.modules]
 path = "../common/modules"
 
+[dependencies.dex-common]
+path = "../../sc-dex-rs/common/dex-common"
+
 [dev-dependencies.elrond-wasm-debug]
 version = "0.16"

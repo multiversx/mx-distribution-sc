@@ -28,3 +28,6 @@ path = ".."
 [dependencies.elrond-wasm-output]
 version = "0.16"
 features = [ "wasm-output-mode",]
+
+[dependencies.dex-common]
+path = "../../../sc-dex-rs/common/dex-common"

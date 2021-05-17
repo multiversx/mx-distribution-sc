@@ -5,6 +5,7 @@ elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
 use distrib_common::*;
+use dex_common::*;
 use modules::*;
 
 mod cache;
@@ -45,7 +46,7 @@ pub trait LockedAssetFactory:
     }
 
     #[endpoint]
-    fn createAndForward(&self, amount: Self::BigUint, address: Address) -> SCResult<()> {
+    fn createAndForward(&self, amount: Self::BigUint, address: Address) -> SCResult<GenericEsdtAmountPair<Self::BigUint>> {
         let caller = self.blockchain().get_caller();
         require!(
             self.whitelisted_contracts().contains(&caller),
@@ -54,8 +55,7 @@ pub trait LockedAssetFactory:
         require!(!self.locked_asset_token_id().is_empty(), "No SFT issued");
         require!(amount > 0, "Zero input amount");
 
-        self.produce_tokens_and_send(&amount, &self.create_default_unlock_milestones(), &address);
-        Ok(())
+        Ok(self.produce_tokens_and_send(&amount, &self.create_default_unlock_milestones(), &address))
     }
 
     #[endpoint]
@@ -64,7 +64,7 @@ pub trait LockedAssetFactory:
         amount: Self::BigUint,
         address: Address,
         #[var_args] schedule: VarArgs<UnlockMilestone>,
-    ) -> SCResult<()> {
+    ) -> SCResult<GenericEsdtAmountPair<Self::BigUint>> {
         let caller = self.blockchain().get_caller();
         require!(
             self.whitelisted_contracts().contains(&caller),
@@ -74,8 +74,7 @@ pub trait LockedAssetFactory:
         require!(amount > 0, "Zero input amount");
         require!(!schedule.is_empty(), "Empty param");
 
-        self.produce_tokens_and_send(&amount, &schedule.0, &address);
-        Ok(())
+        Ok(self.produce_tokens_and_send(&amount, &schedule.0, &address))
     }
 
     #[payable("*")]
@@ -100,7 +99,7 @@ pub trait LockedAssetFactory:
         if locked_remaining > 0 {
             let new_unlock_milestones = self
                 .create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
-            self.produce_tokens_and_send(&locked_remaining, &new_unlock_milestones, &caller);
+            let _ = self.produce_tokens_and_send(&locked_remaining, &new_unlock_milestones, &caller);
         }
 
         self.burn_locked_assets(&locked_token_id, &amount, token_nonce);
@@ -112,19 +111,26 @@ pub trait LockedAssetFactory:
         amount: &Self::BigUint,
         unlock_milestones: &[UnlockMilestone],
         address: &Address,
-    ) {
+    ) -> GenericEsdtAmountPair<Self::BigUint> {
         let attributes = LockedTokenAttributes {
             unlock_milestones: unlock_milestones.to_vec(),
         };
         let result = self.get_cached_sft_nonce_for_attributes(&attributes);
-        match result {
+        let sent_nonce = match result {
             Option::Some(cached_nonce) => {
                 self.add_quantity_and_send_locked_assets(&amount, cached_nonce, &address);
+                cached_nonce
             }
             Option::None => {
                 let new_nonce = self.create_and_send_locked_assets(&amount, &attributes, &address);
                 self.cache_attributes_and_nonce(attributes, new_nonce);
+                new_nonce
             }
+        };
+        GenericEsdtAmountPair {
+            token_id: self.locked_asset_token_id().get(),
+            token_nonce: sent_nonce,
+            amount: amount.clone(),
         }
     }
 

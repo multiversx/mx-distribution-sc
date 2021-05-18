@@ -14,11 +14,11 @@ pub use dex_common::*;
 
 use elrond_wasm::{require, sc_error};
 
-type EnterFarmResultType<BigUint> = SftTokenAmountPair<BigUint>;
+type EnterFarmResultType<BigUint> = GenericEsdtAmountPair<BigUint>;
 type ClaimRewardsResultType<BigUint> =
-    MultiResult2<SftTokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
+    MultiResult2<GenericEsdtAmountPair<BigUint>, GenericEsdtAmountPair<BigUint>>;
 type ExitFarmResultType<BigUint> =
-    MultiResult2<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
+    MultiResult2<FftTokenAmountPair<BigUint>, GenericEsdtAmountPair<BigUint>>;
 
 #[derive(TopEncode, TopDecode, TypeAbi)]
 pub struct ProxyFarmParams {
@@ -60,9 +60,20 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         Ok(())
     }
 
+
     #[payable("*")]
     #[endpoint(enterFarmProxy)]
-    fn enter_farm_proxy(&self, farm_address: &Address) -> SCResult<()> {
+    fn enter_farm_proxy_endpoint(&self, farm_address: Address) -> SCResult<()> {
+        self.enter_farm_proxy(farm_address, false)
+    }
+
+    #[payable("*")]
+    #[endpoint(enterFarmAndLockRewardsProxy)]
+    fn enter_farm_and_lock_rewards_proxy_endpoint(&self, farm_address: Address) -> SCResult<()> {
+        self.enter_farm_proxy(farm_address, true)
+    }
+
+    fn enter_farm_proxy(&self, farm_address: Address, with_lock_rewards: bool) -> SCResult<()> {
         self.require_is_intermediated_farm(&farm_address)?;
         self.require_proxy_farm_params_not_empty()?;
         self.require_wrapped_farm_token_id_not_empty()?;
@@ -97,7 +108,8 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
             &farm_address,
             &to_farm_token_id,
             &amount,
-            &proxy_params
+            &proxy_params,
+            with_lock_rewards,
         );
         let farm_token_id = farm_result.token_id;
         let farm_token_nonce = farm_result.token_nonce;
@@ -161,7 +173,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
 
         self.send().transfer_tokens(
             &reward_token_returned.token_id,
-            0,
+            reward_token_returned.token_nonce,
             &reward_token_returned.amount,
             &caller,
         );
@@ -239,7 +251,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         let caller = self.blockchain().get_caller();
         self.send().transfer_tokens(
             &reward_token_returned.token_id,
-            0,
+            reward_token_returned.token_nonce,
             &reward_token_returned.amount,
             &caller,
         );
@@ -318,14 +330,21 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         lp_token_id: &TokenIdentifier,
         amount: &Self::BigUint,
         proxy_params: &ProxyFarmParams,
+        with_locked_rewards: bool,
     ) -> EnterFarmResultType<Self::BigUint> {
         let gas_limit = core::cmp::min(
             self.blockchain().get_gas_left(),
             proxy_params.enter_farm_gas_limit,
         );
-        self.farm_contract_proxy(farm_address.clone())
-            .enterFarm(lp_token_id.clone(), amount.clone())
-            .execute_on_dest_context_custom_range(gas_limit, |_, after| (after-1, after))
+        if with_locked_rewards {
+            self.farm_contract_proxy(farm_address.clone())
+                .enterFarmAndLockRewards(lp_token_id.clone(), amount.clone())
+                .execute_on_dest_context_custom_range(gas_limit, |_, after| (after-1, after))
+        } else {
+            self.farm_contract_proxy(farm_address.clone())
+                .enterFarm(lp_token_id.clone(), amount.clone())
+                .execute_on_dest_context_custom_range(gas_limit, |_, after| (after-1, after))
+        }
     }
 
     fn actual_exit_farm(

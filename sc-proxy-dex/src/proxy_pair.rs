@@ -15,10 +15,10 @@ use dex_common::*;
 use super::proxy_common;
 
 type AddLiquidityResultType<BigUint> = 
-    MultiResult3<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
+    MultiResult3<FftTokenAmountPair<BigUint>, FftTokenAmountPair<BigUint>, FftTokenAmountPair<BigUint>>;
 
 type RemoveLiquidityResultType<BigUint> =
-    MultiResult2<TokenAmountPair<BigUint>, TokenAmountPair<BigUint>>;
+    MultiResult2<FftTokenAmountPair<BigUint>, FftTokenAmountPair<BigUint>>;
 
 #[derive(TopEncode, TopDecode, PartialEq, Clone, Copy, TypeAbi)]
 pub struct ProxyPairParams {

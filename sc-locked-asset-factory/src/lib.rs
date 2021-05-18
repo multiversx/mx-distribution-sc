@@ -64,7 +64,7 @@ pub trait LockedAssetFactory:
         amount: Self::BigUint,
         address: Address,
         #[var_args] schedule: VarArgs<UnlockMilestone>,
-    ) -> SCResult<GenericEsdtAmountPair<Self::BigUint>> {
+    ) -> SCResult<()> {
         let caller = self.blockchain().get_caller();
         require!(
             self.whitelisted_contracts().contains(&caller),
@@ -74,7 +74,8 @@ pub trait LockedAssetFactory:
         require!(amount > 0, "Zero input amount");
         require!(!schedule.is_empty(), "Empty param");
 
-        Ok(self.produce_tokens_and_send(&amount, &schedule.0, &address))
+        let _ = self.produce_tokens_and_send(&amount, &schedule.0, &address);
+        Ok(())
     }
 
     #[payable("*")]

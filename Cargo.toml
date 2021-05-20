@@ -1,0 +1,12 @@
+[workspace]
+members = [
+  "common/distrib-common",
+  "common/modules",
+  "sc-distribution-rs",
+  "sc-distribution-rs/abi",
+  "sc-locked-asset-factory",
+  "sc-locked-asset-factory/abi",
+  "sc-proxy-dex",
+  "sc-proxy-dex/abi",
+
+]

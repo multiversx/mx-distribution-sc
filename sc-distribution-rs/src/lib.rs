@@ -154,7 +154,7 @@ pub trait EsdtDistribution: asset::AssetModule + global_op::GlobalOperationModul
         for it in assets_amounts.iter().zip(unlock_milestones_vec) {
             let (amount, unlock_milestones) = it;
             self.locked_asset_factory_proxy(to.clone())
-                .createAndForwardCustomSchedule(
+                .create_and_forward_custom_schedule(
                     amount.clone(),
                     caller.clone(),
                     MultiArgVec::from(unlock_milestones),

@@ -1,4 +1,3 @@
-#![allow(non_snake_case)]
 #![allow(clippy::clippy::too_many_arguments)]
 #![allow(clippy::clippy::comparison_chain)]
 
@@ -6,16 +5,18 @@ elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
 type Nonce = u64;
-use elrond_wasm::{require, sc_error};
 
 use core::cmp::min;
-use distrib_common::*;
 use dex_common::*;
+use distrib_common::*;
 
 use super::proxy_common;
 
-type AddLiquidityResultType<BigUint> = 
-    MultiResult3<FftTokenAmountPair<BigUint>, FftTokenAmountPair<BigUint>, FftTokenAmountPair<BigUint>>;
+type AddLiquidityResultType<BigUint> = MultiResult3<
+    FftTokenAmountPair<BigUint>,
+    FftTokenAmountPair<BigUint>,
+    FftTokenAmountPair<BigUint>,
+>;
 
 type RemoveLiquidityResultType<BigUint> =
     MultiResult2<FftTokenAmountPair<BigUint>, FftTokenAmountPair<BigUint>>;
@@ -163,7 +164,7 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
             &first_token_amount_min,
             &second_token_amount_desired,
             &second_token_amount_min,
-            &proxy_params
+            &proxy_params,
         );
 
         let result_tuple = result.0;
@@ -277,15 +278,16 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
 
         let locked_asset_token_id = attributes.locked_assets_token_id;
         let asset_token_id = self.asset_token_id().get();
-        let tokens_for_position = self.actual_remove_liquidity(
-            &pair_address,
-            &lp_token_id,
-            &amount,
-            &first_token_amount_min,
-            &second_token_amount_min,
-            &proxy_params
-        )
-        .into_tuple();
+        let tokens_for_position = self
+            .actual_remove_liquidity(
+                &pair_address,
+                &lp_token_id,
+                &amount,
+                &first_token_amount_min,
+                &second_token_amount_min,
+                &proxy_params,
+            )
+            .into_tuple();
 
         let fungible_token_id: TokenIdentifier;
         let fungible_token_amount: Self::BigUint;
@@ -495,7 +497,7 @@ pub trait ProxyPairModule: proxy_common::ProxyCommonModule {
                 lp_token_amount,
                 &BoxedBytes::empty(),
                 &Self::BigUint::zero(),
-                &H256::zero(),
+                &BoxedBytes::empty(),
                 &attributes,
                 &[BoxedBytes::empty()],
             );

@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
@@ -7,7 +5,6 @@ type Nonce = u64;
 type Epoch = u64;
 
 use distrib_common::*;
-use elrond_wasm::{require, sc_error};
 use modules::*;
 
 const ADDITIONAL_AMOUNT_TO_CREATE: u64 = 1;
@@ -64,7 +61,7 @@ pub trait LockedAssetModule: asset::AssetModule {
             &amount_to_create,
             &BoxedBytes::empty(),
             &Self::BigUint::zero(),
-            &H256::zero(),
+            &BoxedBytes::empty(),
             attributes,
             &[BoxedBytes::empty()],
         );

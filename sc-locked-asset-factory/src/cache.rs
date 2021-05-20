@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 

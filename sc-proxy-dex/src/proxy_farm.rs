@@ -1,4 +1,3 @@
-#![allow(non_snake_case)]
 #![allow(clippy::too_many_arguments)]
 
 elrond_wasm::imports!();
@@ -11,8 +10,6 @@ use distrib_common::*;
 use super::proxy_common;
 use super::proxy_pair;
 pub use dex_common::*;
-
-use elrond_wasm::{require, sc_error};
 
 type EnterFarmResultType<BigUint> = GenericEsdtAmountPair<BigUint>;
 type ClaimRewardsResultType<BigUint> =
@@ -59,7 +56,6 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         self.intermediated_farms().remove(&farm_address);
         Ok(())
     }
-
 
     #[payable("*")]
     #[endpoint(enterFarmProxy)]
@@ -152,14 +148,15 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         let farm_token_id = wrapped_farm_token_attrs.farm_token_id;
         let farm_token_nonce = wrapped_farm_token_attrs.farm_token_nonce;
 
-        let farm_result = self.actual_exit_farm(
-            &farm_address,
-            &farm_token_id,
-            farm_token_nonce,
-            &amount,
-            &proxy_params
-        )
-        .into_tuple();
+        let farm_result = self
+            .actual_exit_farm(
+                &farm_address,
+                &farm_token_id,
+                farm_token_nonce,
+                &amount,
+                &proxy_params,
+            )
+            .into_tuple();
         let farmed_token_returned = farm_result.0;
         let reward_token_returned = farm_result.1;
 
@@ -229,14 +226,15 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
             proxy_params.burn_tokens_gas_limit,
         );
 
-        let result = self.actual_claim_rewards(
-            &farm_address,
-            &farm_token_id,
-            farm_token_nonce,
-            &amount,
-            &proxy_params
-        )
-        .into_tuple();
+        let result = self
+            .actual_claim_rewards(
+                &farm_address,
+                &farm_token_id,
+                farm_token_nonce,
+                &amount,
+                &proxy_params,
+            )
+            .into_tuple();
         let new_farm_token = result.0;
         let reward_token_returned = result.1;
         let new_farm_token_id = new_farm_token.token_id;
@@ -317,7 +315,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
             amount,
             &BoxedBytes::empty(),
             &Self::BigUint::zero(),
-            &H256::zero(),
+            &BoxedBytes::empty(),
             &attributes,
             &[BoxedBytes::empty()],
         );
@@ -339,11 +337,11 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         if with_locked_rewards {
             self.farm_contract_proxy(farm_address.clone())
                 .enterFarmAndLockRewards(lp_token_id.clone(), amount.clone())
-                .execute_on_dest_context_custom_range(gas_limit, |_, after| (after-1, after))
+                .execute_on_dest_context_custom_range(gas_limit, |_, after| (after - 1, after))
         } else {
             self.farm_contract_proxy(farm_address.clone())
                 .enterFarm(lp_token_id.clone(), amount.clone())
-                .execute_on_dest_context_custom_range(gas_limit, |_, after| (after-1, after))
+                .execute_on_dest_context_custom_range(gas_limit, |_, after| (after - 1, after))
         }
     }
 
@@ -362,7 +360,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         self.farm_contract_proxy(farm_address.clone())
             .exitFarm(farm_token_id.clone(), amount.clone())
             .with_nft_nonce(farm_token_nonce)
-            .execute_on_dest_context_custom_range(gas_limit, |_, after| (after-2, after))
+            .execute_on_dest_context_custom_range(gas_limit, |_, after| (after - 2, after))
     }
 
     fn actual_claim_rewards(
@@ -380,7 +378,7 @@ pub trait ProxyFarmModule: proxy_common::ProxyCommonModule + proxy_pair::ProxyPa
         self.farm_contract_proxy(farm_address.clone())
             .claimRewards(farm_token_id.clone(), amount.clone())
             .with_nft_nonce(farm_token_nonce)
-            .execute_on_dest_context_custom_range(gas_limit, |_, after| (after-2, after))
+            .execute_on_dest_context_custom_range(gas_limit, |_, after| (after - 2, after))
     }
 
     fn increase_wrapped_farm_token_nonce(&self) -> Nonce {

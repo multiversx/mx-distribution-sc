@@ -1,8 +1,6 @@
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-use elrond_wasm::{require, sc_error};
-
 #[elrond_wasm_derive::module]
 pub trait GlobalOperationModule {
     fn global_op_start(&self) {

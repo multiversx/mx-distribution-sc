@@ -1,11 +1,10 @@
 #![no_std]
-#![allow(non_snake_case)]
 
 elrond_wasm::imports!();
 elrond_wasm::derive_imports!();
 
-use distrib_common::*;
 use dex_common::*;
+use distrib_common::*;
 use modules::*;
 
 mod cache;
@@ -45,8 +44,12 @@ pub trait LockedAssetFactory:
         Ok(())
     }
 
-    #[endpoint]
-    fn createAndForward(&self, amount: Self::BigUint, address: Address) -> SCResult<GenericEsdtAmountPair<Self::BigUint>> {
+    #[endpoint(createAndForward)]
+    fn create_and_forward(
+        &self,
+        amount: Self::BigUint,
+        address: Address,
+    ) -> SCResult<GenericEsdtAmountPair<Self::BigUint>> {
         let caller = self.blockchain().get_caller();
         require!(
             self.whitelisted_contracts().contains(&caller),
@@ -55,11 +58,15 @@ pub trait LockedAssetFactory:
         require!(!self.locked_asset_token_id().is_empty(), "No SFT issued");
         require!(amount > 0, "Zero input amount");
 
-        Ok(self.produce_tokens_and_send(&amount, &self.create_default_unlock_milestones(), &address))
+        Ok(self.produce_tokens_and_send(
+            &amount,
+            &self.create_default_unlock_milestones(),
+            &address,
+        ))
     }
 
-    #[endpoint]
-    fn createAndForwardCustomSchedule(
+    #[endpoint(createAndForwardCustomSchedule)]
+    fn create_and_forward_custom_schedule(
         &self,
         amount: Self::BigUint,
         address: Address,
@@ -79,8 +86,8 @@ pub trait LockedAssetFactory:
     }
 
     #[payable("*")]
-    #[endpoint]
-    fn unlockAssets(&self) -> SCResult<()> {
+    #[endpoint(unlockAssets)]
+    fn unlock_assets(&self) -> SCResult<()> {
         let (amount, token_id) = self.call_value().payment_token_pair();
         let token_nonce = self.call_value().esdt_token_nonce();
         let locked_token_id = self.locked_asset_token_id().get();
@@ -100,7 +107,8 @@ pub trait LockedAssetFactory:
         if locked_remaining > 0 {
             let new_unlock_milestones = self
                 .create_new_unlock_milestones(current_block_epoch, &attributes.unlock_milestones);
-            let _ = self.produce_tokens_and_send(&locked_remaining, &new_unlock_milestones, &caller);
+            let _ =
+                self.produce_tokens_and_send(&locked_remaining, &new_unlock_milestones, &caller);
         }
 
         self.burn_locked_assets(&locked_token_id, &amount, token_nonce);
